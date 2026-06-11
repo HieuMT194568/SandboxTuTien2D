@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 using System.Linq;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -771,7 +772,7 @@ public class Game1 : Game
         {
             if (_dbManager.IsConnected)
             {
-                bool saved = _dbManager.SavePlayerState(_player);
+                bool saved = _dbManager.SavePlayerState(_player, _monsters, _droppedItems, _launchers, _soulRings);
                 if (saved)
                 {
                     _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Game Saved to MySQL!", Color.Lime, 2.0f, 1.1f));
@@ -792,9 +793,124 @@ public class Game1 : Game
         {
             if (_dbManager.IsConnected)
             {
-                bool loaded = _dbManager.LoadPlayerState(_player, _dataLoader);
+                string monstersJson, droppedItemsJson, launchersJson, soulRingsJson;
+                bool loaded = _dbManager.LoadPlayerState(_player, _dataLoader, out monstersJson, out droppedItemsJson, out launchersJson, out soulRingsJson);
                 if (loaded)
                 {
+                    // 1. Dọn dẹp thế giới hiện tại
+                    _monsters.Clear();
+                    _soulRings.Clear();
+                    _launchers.Clear();
+                    _droppedItems.Clear();
+                    _projectilePool.Clear();
+                    _particles.Clear();
+
+                    // 2. Phục hồi quái vật (Hồn thú)
+                    if (!string.IsNullOrEmpty(monstersJson))
+                    {
+                        try
+                        {
+                            var list = JsonSerializer.Deserialize<List<SavedMonsterData>>(monstersJson);
+                            if (list != null)
+                            {
+                                foreach (var data in list)
+                                {
+                                    if (Enum.TryParse<Element>(data.element, true, out var elem))
+                                    {
+                                        var m = new Monster(data.name, data.age, data.maxHp, new Vector2(data.x, data.y), elem);
+                                        m.HP = data.hp;
+                                        m.MaxHP = data.maxHp;
+                                        m.BaseMaxHP = data.maxHp / (1f + data.age / 1500f);
+                                        
+                                        // Gán lại sự kiện OnKilled
+                                        m.OnKilled += monster =>
+                                        {
+                                            TriggerShake(0.35f, 6.0f);
+                                            SpawnElementalBurst(monster.Position, monster.Element, 25);
+                                            var ring = new SoulRingEntity(monster.Position, monster.Age, monster.Element);
+                                            _soulRings.Add(ring);
+                                            _floatingTexts.Add(new FloatingText(monster.Position, $"Dropped Soul Ring {monster.Age}N ({monster.Element})!", Color.Yellow, 2.5f, 1.2f));
+                                            _monsters.Remove(monster);
+                                        };
+                                        _monsters.Add(m);
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Lỗi Tải Game] Không thể phục hồi Hồn Thú: {ex.Message}");
+                        }
+                    }
+
+                    // 3. Phục hồi vật phẩm rơi
+                    if (!string.IsNullOrEmpty(droppedItemsJson))
+                    {
+                        try
+                        {
+                            var list = JsonSerializer.Deserialize<List<SavedDroppedItemData>>(droppedItemsJson);
+                            if (list != null)
+                            {
+                                foreach (var data in list)
+                                {
+                                    var item = new DroppedItem(new Vector2(data.x, data.y), data.itemId, data.name, data.type, data.quantity);
+                                    _droppedItems.Add(item);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Lỗi Tải Game] Không thể phục hồi vật phẩm rơi: {ex.Message}");
+                        }
+                    }
+
+                    // 4. Phục hồi bệ phóng tự động (turrets)
+                    if (!string.IsNullOrEmpty(launchersJson))
+                    {
+                        try
+                        {
+                            var list = JsonSerializer.Deserialize<List<SavedLauncherData>>(launchersJson);
+                            if (list != null)
+                            {
+                                foreach (var data in list)
+                                {
+                                    var l = new AutoLauncher(new Vector2(data.x, data.y), data.type);
+                                    l.AmmoCount = data.ammo;
+                                    l.MaxAmmo = data.maxAmmo;
+                                    _launchers.Add(l);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Lỗi Tải Game] Không thể phục hồi bệ phóng: {ex.Message}");
+                        }
+                    }
+
+                    // 5. Phục hồi hồn hoàn rơi trên đất
+                    if (!string.IsNullOrEmpty(soulRingsJson))
+                    {
+                        try
+                        {
+                            var list = JsonSerializer.Deserialize<List<SavedSoulRingData>>(soulRingsJson);
+                            if (list != null)
+                            {
+                                foreach (var data in list)
+                                {
+                                    if (Enum.TryParse<Element>(data.element, true, out var elem))
+                                    {
+                                        var r = new SoulRingEntity(new Vector2(data.x, data.y), data.age, elem);
+                                        _soulRings.Add(r);
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Lỗi Tải Game] Không thể phục hồi hồn hoàn: {ex.Message}");
+                        }
+                    }
+
                     _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Game Loaded from MySQL!", Color.Cyan, 2.0f, 1.1f));
                 }
                 else
@@ -1682,7 +1798,7 @@ public class Game1 : Game
             _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 50), "LEVEL UP!", Color.Yellow, 2.0f, 1.2f));
             if (_dbManager.IsConnected)
             {
-                _dbManager.SavePlayerState(_player);
+                _dbManager.SavePlayerState(_player, _monsters, _droppedItems, _launchers, _soulRings);
                 _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 70), "Auto-Saved!", Color.Lime * 0.7f, 1.5f, 0.9f));
             }
         });
@@ -1699,7 +1815,7 @@ public class Game1 : Game
             _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 60), $"SUCCESS #{e.SoulRingNumber}!", Color.Gold, 3.0f, 1.3f));
             if (_dbManager.IsConnected)
             {
-                _dbManager.SavePlayerState(_player);
+                _dbManager.SavePlayerState(_player, _monsters, _droppedItems, _launchers, _soulRings);
                 _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 80), "Auto-Saved!", Color.Lime * 0.7f, 1.5f, 0.9f));
             }
         });
@@ -1937,5 +2053,43 @@ public class Game1 : Game
         {
             _spriteBatch.DrawString(_font, label, new Vector2(x + width + 10, y - 2), textColor, 0f, Vector2.Zero, 0.82f, SpriteEffects.None, 0f);
         }
+    }
+
+    private struct SavedMonsterData
+    {
+        public string name { get; set; }
+        public int age { get; set; }
+        public float hp { get; set; }
+        public float maxHp { get; set; }
+        public float x { get; set; }
+        public float y { get; set; }
+        public string element { get; set; }
+    }
+
+    private struct SavedDroppedItemData
+    {
+        public string itemId { get; set; }
+        public string name { get; set; }
+        public string type { get; set; }
+        public int quantity { get; set; }
+        public float x { get; set; }
+        public float y { get; set; }
+    }
+
+    private struct SavedLauncherData
+    {
+        public int type { get; set; }
+        public int ammo { get; set; }
+        public int maxAmmo { get; set; }
+        public float x { get; set; }
+        public float y { get; set; }
+    }
+
+    private struct SavedSoulRingData
+    {
+        public int age { get; set; }
+        public string element { get; set; }
+        public float x { get; set; }
+        public float y { get; set; }
     }
 }
