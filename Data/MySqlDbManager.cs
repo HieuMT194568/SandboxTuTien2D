@@ -119,7 +119,7 @@ namespace SandboxTuTien.Data
         }
 
         /// <summary>
-        /// Di cư dữ liệu từ JSON sang MySQL nếu bảng dữ liệu rỗng.
+        /// Di cư dữ liệu từ JSON sang MySQL (nếu có cập nhật mới).
         /// </summary>
         public void MigrateJsonToMySql(List<ConsumableData> consumables, List<HiddenWeaponData> weapons)
         {
@@ -131,24 +131,25 @@ namespace SandboxTuTien.Data
                 {
                     conn.Open();
 
-                    // 1. Kiểm tra và di cư Consumables
-                    bool consumablesEmpty = false;
-                    using (var cmd = conn.CreateCommand())
+                    // 1. Đồng bộ Consumables
+                    if (consumables != null && consumables.Count > 0)
                     {
-                        cmd.CommandText = "SELECT COUNT(*) FROM consumables;";
-                        consumablesEmpty = Convert.ToInt32(cmd.ExecuteScalar()) == 0;
-                    }
-
-                    if (consumablesEmpty && consumables != null && consumables.Count > 0)
-                    {
-                        Console.WriteLine("[MySQL] Bảng 'consumables' rỗng. Bắt đầu di cư dữ liệu từ JSON...");
+                        Console.WriteLine("[MySQL] Bắt đầu đồng bộ dữ liệu Consumables từ JSON...");
+                        int syncCount = 0;
                         foreach (var c in consumables)
                         {
                             using (var cmd = conn.CreateCommand())
                             {
                                 cmd.CommandText = @"
                                     INSERT INTO consumables (item_id, name, type, source, tier_required, effects_json, spoilage_time)
-                                    VALUES (@id, @name, @type, @source, @tier, @effects, @spoilage);";
+                                    VALUES (@id, @name, @type, @source, @tier, @effects, @spoilage)
+                                    ON DUPLICATE KEY UPDATE 
+                                        name = VALUES(name),
+                                        type = VALUES(type),
+                                        source = VALUES(source),
+                                        tier_required = VALUES(tier_required),
+                                        effects_json = VALUES(effects_json),
+                                        spoilage_time = VALUES(spoilage_time);";
                                 cmd.Parameters.AddWithValue("@id", c.ItemId);
                                 cmd.Parameters.AddWithValue("@name", c.Name);
                                 cmd.Parameters.AddWithValue("@type", c.Type);
@@ -157,29 +158,31 @@ namespace SandboxTuTien.Data
                                 cmd.Parameters.AddWithValue("@effects", JsonSerializer.Serialize(c.Effects, _jsonOptions));
                                 cmd.Parameters.AddWithValue("@spoilage", c.SpoilageTime);
                                 cmd.ExecuteNonQuery();
+                                syncCount++;
                             }
                         }
-                        Console.WriteLine($"[MySQL] Đã di cư thành công {consumables.Count} vật phẩm tiêu thụ vào MySQL.");
+                        Console.WriteLine($"[MySQL] Đã đồng bộ thành công {syncCount} Consumables.");
                     }
 
-                    // 2. Kiểm tra và di cư Hidden Weapons
-                    bool weaponsEmpty = false;
-                    using (var cmd = conn.CreateCommand())
+                    // 2. Đồng bộ Hidden Weapons
+                    if (weapons != null && weapons.Count > 0)
                     {
-                        cmd.CommandText = "SELECT COUNT(*) FROM hidden_weapons;";
-                        weaponsEmpty = Convert.ToInt32(cmd.ExecuteScalar()) == 0;
-                    }
-
-                    if (weaponsEmpty && weapons != null && weapons.Count > 0)
-                    {
-                        Console.WriteLine("[MySQL] Bảng 'hidden_weapons' rỗng. Bắt đầu di cư dữ liệu từ JSON...");
+                        Console.WriteLine("[MySQL] Bắt đầu đồng bộ dữ liệu Hidden Weapons từ JSON...");
+                        int syncCount = 0;
                         foreach (var w in weapons)
                         {
                             using (var cmd = conn.CreateCommand())
                             {
                                 cmd.CommandText = @"
                                     INSERT INTO hidden_weapons (item_id, name, type, tier_required, combat_stats_json, effects_json, crafting_recipe_json)
-                                    VALUES (@id, @name, @type, @tier, @stats, @effects, @recipe);";
+                                    VALUES (@id, @name, @type, @tier, @stats, @effects, @recipe)
+                                    ON DUPLICATE KEY UPDATE 
+                                        name = VALUES(name),
+                                        type = VALUES(type),
+                                        tier_required = VALUES(tier_required),
+                                        combat_stats_json = VALUES(combat_stats_json),
+                                        effects_json = VALUES(effects_json),
+                                        crafting_recipe_json = VALUES(crafting_recipe_json);";
                                 cmd.Parameters.AddWithValue("@id", w.ItemId);
                                 cmd.Parameters.AddWithValue("@name", w.Name);
                                 cmd.Parameters.AddWithValue("@type", w.Type);
@@ -188,15 +191,16 @@ namespace SandboxTuTien.Data
                                 cmd.Parameters.AddWithValue("@effects", JsonSerializer.Serialize(w.Effects, _jsonOptions));
                                 cmd.Parameters.AddWithValue("@recipe", JsonSerializer.Serialize(w.CraftingRecipe, _jsonOptions));
                                 cmd.ExecuteNonQuery();
+                                syncCount++;
                             }
                         }
-                        Console.WriteLine($"[MySQL] Đã di cư thành công {weapons.Count} ám khí vào MySQL.");
+                        Console.WriteLine($"[MySQL] Đã đồng bộ thành công {syncCount} Hidden Weapons.");
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MySQL] Lỗi trong quá trình di cư dữ liệu: {ex.Message}");
+                Console.WriteLine($"[MySQL] Lỗi trong quá trình đồng bộ dữ liệu: {ex.Message}");
             }
         }
 

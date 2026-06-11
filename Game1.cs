@@ -110,6 +110,8 @@ public class Game1 : Game
     // TRẠNG THÁI GIAO DIỆN
     // ========================================================================
     private bool _isInventoryOpen = false;
+    private bool _isCraftingOpen = false;
+    private int _selectedRecipeIndex = 0;
     private KeyboardState _previousKeyState;
     private MouseState _previousMouseState;
     private readonly Random _random = new();
@@ -612,6 +614,14 @@ public class Game1 : Game
         _spriteBatch.DrawString(_font, "Oscar", oscarPos - new Vector2(18, _oscarTexture.Height * 1.5f * oscarScale / 2f + 15f), Color.Pink, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
         _spriteBatch.DrawString(_font, "Anvil", anvilPos - new Vector2(16, _anvilTexture.Height * 1.5f * anvilScale / 2f + 15f), Color.LightGray, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
 
+        if (!_isCraftingOpen && Vector2.Distance(_player.Position, anvilPos) <= 60f)
+        {
+            string prompt = "Nhan [C] de Che tao Am khi";
+            Vector2 promptSz = _font.MeasureString(prompt) * 0.65f;
+            _spriteBatch.DrawString(_font, prompt, anvilPos - new Vector2(promptSz.X / 2f, _anvilTexture.Height * 1.5f * anvilScale / 2f + 35f), 
+                                   Color.Gold, 0f, Vector2.Zero, 0.65f, SpriteEffects.None, 0f);
+        }
+
         // Nhãn tên Dropped Item
         foreach (var item in _droppedItems)
         {
@@ -680,6 +690,11 @@ public class Game1 : Game
         if (_isInventoryOpen)
         {
             DrawInventoryUI();
+        }
+
+        if (_isCraftingOpen)
+        {
+            DrawCraftingUI();
         }
 
         _spriteBatch.End();
@@ -767,6 +782,42 @@ public class Game1 : Game
             TryAbsorbNearestSoulRing();
         }
 
+        // --- Bấm phím [C] để Mở/Đóng Giao diện Chế tạo tại Lò Rèn ---
+        if (IsKeyJustPressed(keys, Keys.C))
+        {
+            if (Vector2.Distance(_player.Position, _anvilSpawner.Position) <= 60f)
+            {
+                _isCraftingOpen = !_isCraftingOpen;
+                if (_isCraftingOpen) _isInventoryOpen = true;
+                Console.WriteLine($"[Lò Rèn] Bật/Tắt lò rèn Đường Môn: " + (_isCraftingOpen ? "MỞ" : "ĐÓNG"));
+            }
+            else
+            {
+                _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Lai gan Lo ren de su dung!", Color.OrangeRed));
+            }
+        }
+
+        // Tự động đóng lò rèn nếu đi quá xa
+        if (_isCraftingOpen && Vector2.Distance(_player.Position, _anvilSpawner.Position) > 75f)
+        {
+            _isCraftingOpen = false;
+            Console.WriteLine("[Lò Rèn] Đã đóng Lò Rèn do đi quá xa!");
+            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Lo ren da dong (Qua xa)!", Color.OrangeRed));
+        }
+
+        // Điều khiển phím chọn công thức khi lò rèn mở
+        if (_isCraftingOpen)
+        {
+            if (IsKeyJustPressed(keys, Keys.F1))
+            {
+                _selectedRecipeIndex = 0;
+            }
+            if (IsKeyJustPressed(keys, Keys.F2))
+            {
+                _selectedRecipeIndex = 1;
+            }
+        }
+
         // --- Bấm phím [F5] để Lưu game vào MySQL ---
         if (IsKeyJustPressed(keys, Keys.F5))
         {
@@ -823,15 +874,7 @@ public class Game1 : Game
                                         m.BaseMaxHP = data.maxHp / (1f + data.age / 1500f);
                                         
                                         // Gán lại sự kiện OnKilled
-                                        m.OnKilled += monster =>
-                                        {
-                                            TriggerShake(0.35f, 6.0f);
-                                            SpawnElementalBurst(monster.Position, monster.Element, 25);
-                                            var ring = new SoulRingEntity(monster.Position, monster.Age, monster.Element);
-                                            _soulRings.Add(ring);
-                                            _floatingTexts.Add(new FloatingText(monster.Position, $"Dropped Soul Ring {monster.Age}N ({monster.Element})!", Color.Yellow, 2.5f, 1.2f));
-                                            _monsters.Remove(monster);
-                                        };
+                                        m.OnKilled += HandleMonsterKilled;
                                         _monsters.Add(m);
                                     }
                                 }
@@ -999,12 +1042,33 @@ public class Game1 : Game
             }
         }
 
-        // Click chuột trái bắn đạn thường
+        // Click chuột trái bắn đạn thường hoặc chế tạo
         if (mouse.LeftButton == ButtonState.Pressed && _previousMouseState.LeftButton == ButtonState.Released)
         {
             bool clickInInventory = _isInventoryOpen && mouse.X >= 510 && mouse.Y <= 520;
+            bool clickInCrafting = _isCraftingOpen && mouse.X >= 20 && mouse.X <= 320 && mouse.Y >= 15 && mouse.Y <= 520;
             
-            if (!clickInInventory &&
+            if (clickInCrafting)
+            {
+                // Click inside Slot 1: X: 35 -> 305, Y: 70 -> 230
+                if (mouse.X >= 35 && mouse.X <= 305 && mouse.Y >= 70 && mouse.Y <= 230)
+                {
+                    _selectedRecipeIndex = 0;
+                    Console.WriteLine("[Lò Rèn] Chọn chế tạo: Vô Thanh Tụ Tiễn");
+                }
+                // Click inside Slot 2: X: 35 -> 305, Y: 230 -> 390
+                else if (mouse.X >= 35 && mouse.X <= 305 && mouse.Y >= 230 && mouse.Y <= 390)
+                {
+                    _selectedRecipeIndex = 1;
+                    Console.WriteLine("[Lò Rèn] Chọn chế tạo: Chư Cát Thần Nỗ");
+                }
+                // Click inside Craft Button: X: 35 -> 305, Y: 420 -> 480
+                else if (mouse.X >= 35 && mouse.X <= 305 && mouse.Y >= 420 && mouse.Y <= 480)
+                {
+                    CraftRecipe(_selectedRecipeIndex);
+                }
+            }
+            else if (!clickInInventory &&
                 _player.Cultivation.CurrentState != CultivationState.Dead && 
                 _player.Cultivation.CurrentState != CultivationState.AbsorbingRing)
             {
@@ -1315,19 +1379,7 @@ public class Game1 : Game
 
         var m = new Monster(name, age, hp, spawnPos, elem);
         
-        m.OnKilled += monster =>
-        {
-            // Rung lắc màn hình lớn và vụ nổ năng lượng bộc phát
-            TriggerShake(0.35f, 6.0f);
-            SpawnElementalBurst(monster.Position, monster.Element, 25);
-
-            // Rơi Hồn Hoàn lưu trữ tuổi thọ và hệ thuộc tính của quái vật!
-            var ring = new SoulRingEntity(monster.Position, monster.Age, monster.Element);
-            _soulRings.Add(ring);
-
-            _floatingTexts.Add(new FloatingText(monster.Position, $"Dropped Soul Ring {monster.Age}N ({monster.Element})!", Color.Yellow, 2.5f, 1.2f));
-            _monsters.Remove(monster);
-        };
+        m.OnKilled += HandleMonsterKilled;
 
         _monsters.Add(m);
         _floatingTexts.Add(new FloatingText(spawnPos, $"Spawn: {m.Name} ({age}N)", Color.Tomato));
@@ -1449,6 +1501,9 @@ public class Game1 : Game
             "am_khi_tu_tien_01" => "Vo Thanh Tu Tien",
             "am_khi_chu_cat_02" => "Chu Cat Than No",
             "item_thiet_mau_01" => "Thiet Mau Ammo",
+            "mat_thi_thiet_mau" => "Thiet Mau Tho",
+            "lo_xo_co_quan" => "Lo Xo Co Quan",
+            "day_cung_kim_ti" => "Day Cung Kim Ty",
             _ => "Tay khong"
         };
     }
@@ -2057,6 +2112,197 @@ public class Game1 : Game
         {
             _spriteBatch.DrawString(_font, label, new Vector2(x + width + 10, y - 2), textColor, 0f, Vector2.Zero, 0.82f, SpriteEffects.None, 0f);
         }
+    }
+
+    private void HandleMonsterKilled(Monster monster)
+    {
+        TriggerShake(0.35f, 6.0f);
+        SpawnElementalBurst(monster.Position, monster.Element, 25);
+
+        // Rơi Hồn Hoàn lưu trữ tuổi thọ và hệ thuộc tính của quái vật!
+        var ring = new SoulRingEntity(monster.Position, monster.Age, monster.Element);
+        _soulRings.Add(ring);
+        _floatingTexts.Add(new FloatingText(monster.Position, $"Dropped Soul Ring {monster.Age}N ({monster.Element})!", Color.Yellow, 2.5f, 1.2f));
+
+        // Rơi nguyên liệu rèn với tỷ lệ 40% dựa theo hệ của quái vật
+        if (_random.NextDouble() < 0.4)
+        {
+            string matId = monster.Element switch
+            {
+                Element.Wood => "day_cung_kim_ti",
+                Element.Fire => "lo_xo_co_quan",
+                Element.Ice => "mat_thi_thiet_mau",
+                _ => "mat_thi_thiet_mau"
+            };
+            string matName = GetHUDItemName(matId);
+            _droppedItems.Add(new DroppedItem(monster.Position + new Vector2(_random.Next(-15, 15), _random.Next(-15, 15)), matId, matName, "CONSUMABLE", 1));
+        }
+
+        _monsters.Remove(monster);
+    }
+
+    private int GetInventoryItemCount(string itemId)
+    {
+        var item = _player.Inventory.Items.FirstOrDefault(i => i.ItemId == itemId);
+        return item?.Quantity ?? 0;
+    }
+
+    private bool CanCraftRecipe(int recipeIndex)
+    {
+        if (recipeIndex == 0) // Vô Thanh Tụ Tiễn
+        {
+            return GetInventoryItemCount("mat_thi_thiet_mau") >= 1 &&
+                   GetInventoryItemCount("lo_xo_co_quan") >= 1;
+        }
+        else if (recipeIndex == 1) // Chư Cát Thần Nỗ
+        {
+            return GetInventoryItemCount("mat_thi_thiet_mau") >= 3 &&
+                   GetInventoryItemCount("lo_xo_co_quan") >= 5 &&
+                   GetInventoryItemCount("day_cung_kim_ti") >= 2;
+        }
+        return false;
+    }
+
+    private void CraftRecipe(int recipeIndex)
+    {
+        if (!CanCraftRecipe(recipeIndex))
+        {
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), "Khong du nguyen lieu!", Color.Red));
+            return;
+        }
+
+        // Khấu trừ nguyên liệu
+        if (recipeIndex == 0)
+        {
+            _player.Inventory.RemoveItem("mat_thi_thiet_mau", 1);
+            _player.Inventory.RemoveItem("lo_xo_co_quan", 1);
+
+            var weaponData = _hiddenWeapons.FirstOrDefault(w => w.ItemId == "am_khi_tu_tien_01");
+            if (weaponData != null)
+            {
+                _player.Inventory.AddHiddenWeapon(weaponData, 1);
+                _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 35), "Che tao thanh cong: Vo Thanh Tu Tien!", Color.Lime, 2.0f, 1.1f));
+                Console.WriteLine("[Lò Rèn] Đã chế tạo thành công: Vô Thanh Tụ Tiễn!");
+            }
+        }
+        else if (recipeIndex == 1)
+        {
+            _player.Inventory.RemoveItem("mat_thi_thiet_mau", 3);
+            _player.Inventory.RemoveItem("lo_xo_co_quan", 5);
+            _player.Inventory.RemoveItem("day_cung_kim_ti", 2);
+
+            var weaponData = _hiddenWeapons.FirstOrDefault(w => w.ItemId == "am_khi_chu_cat_02");
+            if (weaponData != null)
+            {
+                _player.Inventory.AddHiddenWeapon(weaponData, 1);
+                _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 35), "Che tao thanh cong: Chu Cat Than No!", Color.Lime, 2.0f, 1.1f));
+                Console.WriteLine("[Lò Rèn] Đã chế tạo thành công: Chư Cát Thần Nỗ!");
+            }
+        }
+
+        // Hiệu ứng lò rèn giật rung và xẹt tia lửa
+        TriggerShake(0.2f, 4f);
+        for (int i = 0; i < 15; i++)
+        {
+            Vector2 sparkVel = new Vector2((float)(_random.NextDouble() * 100 - 50), (float)(_random.NextDouble() * -80 - 20));
+            _particles.Add(new Particle(_anvilSpawner.Position, sparkVel, Color.OrangeRed, 3f, 0.8f, ParticleType.Spark));
+        }
+    }
+
+    private void DrawCraftingUI()
+    {
+        int startX = 20;
+        int startY = 15;
+        int width = 300;
+        int height = 505;
+
+        // Vẽ Nền
+        DrawRect(startX, startY, width, height, new Color(24, 20, 38, 235));
+        DrawRect(startX, startY, width, height, new Color(110, 85, 140), true);
+        DrawRect(startX + 1, startY + 1, width - 2, 1, new Color(160, 120, 190, 150)); // top inner highlight
+
+        // Vẽ Tiêu đề
+        _spriteBatch.DrawString(_font, "LO REN DUONG MON (FORGE)", new Vector2(startX + 18, startY + 15), Color.Gold, 0f, Vector2.Zero, 0.88f, SpriteEffects.None, 0f);
+        DrawRect(startX + 15, startY + 40, width - 30, 2, new Color(110, 85, 140));
+
+        // Hai công thức chế tạo
+        int slotStartX = startX + 15;
+        int slotStartY = startY + 55;
+        int slotHeight = 160;
+
+        for (int i = 0; i < 2; i++)
+        {
+            int sY = slotStartY + i * (slotHeight + 15);
+            bool isSelected = _selectedRecipeIndex == i;
+
+            if (isSelected)
+            {
+                DrawRect(slotStartX, sY, width - 30, slotHeight, Color.Purple * 0.2f);
+                DrawRect(slotStartX, sY, width - 30, slotHeight, Color.Gold, true);
+            }
+            else
+            {
+                DrawRect(slotStartX, sY, width - 30, slotHeight, new Color(20, 16, 28));
+                DrawRect(slotStartX, sY, width - 30, slotHeight, new Color(80, 65, 100), true);
+            }
+
+            // Vẽ tiêu đề của Recipe
+            string recipeName = i == 0 ? "1. Vo Thanh Tu Tien" : "2. Chu Cat Than No";
+            string reqRealm = i == 0 ? "(Yeu cau: Hon Si - Cap 10)" : "(Yeu cau: Hon Su - Cap 20+)";
+            _spriteBatch.DrawString(_font, recipeName, new Vector2(slotStartX + 10, sY + 8), isSelected ? Color.Gold : Color.White, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+            _spriteBatch.DrawString(_font, reqRealm, new Vector2(slotStartX + 10, sY + 26), Color.DarkGray, 0f, Vector2.Zero, 0.72f, SpriteEffects.None, 0f);
+
+            // Liệt kê nguyên liệu
+            _spriteBatch.DrawString(_font, "Nguyen lieu can:", new Vector2(slotStartX + 10, sY + 45), Color.LightGray, 0f, Vector2.Zero, 0.78f, SpriteEffects.None, 0f);
+
+            if (i == 0)
+            {
+                // Vô Thanh Tụ Tiễn: 1 Thiết Mẫu, 1 Lò Xo
+                DrawIngredientStatus("mat_thi_thiet_mau", 1, slotStartX + 15, sY + 65);
+                DrawIngredientStatus("lo_xo_co_quan", 1, slotStartX + 15, sY + 88);
+            }
+            else
+            {
+                // Chư Cát Thần Nỗ: 3 Thiết Mẫu, 5 Lò Xo, 2 Dây Cung
+                DrawIngredientStatus("mat_thi_thiet_mau", 3, slotStartX + 15, sY + 65);
+                DrawIngredientStatus("lo_xo_co_quan", 5, slotStartX + 15, sY + 88);
+                DrawIngredientStatus("day_cung_kim_ti", 2, slotStartX + 15, sY + 111);
+            }
+        }
+
+        // Vẽ nút CHẾ TẠO ở dưới
+        int btnX = startX + 15;
+        int btnY = startY + 420;
+        int btnW = width - 30;
+        int btnH = 60;
+
+        bool canCraftSelected = CanCraftRecipe(_selectedRecipeIndex);
+        Color btnColor = canCraftSelected ? new Color(50, 160, 50) : new Color(80, 80, 80);
+        Color borderBtnColor = canCraftSelected ? Color.Lime : Color.DarkGray;
+
+        DrawRect(btnX, btnY, btnW, btnH, btnColor);
+        DrawRect(btnX, btnY, btnW, btnH, borderBtnColor, true);
+
+        if (canCraftSelected)
+        {
+            DrawRect(btnX, btnY, btnW, Math.Max(1, btnH / 3), Color.White * 0.15f);
+        }
+
+        string btnText = "BAT DAU CHE TAO";
+        Vector2 textSize = _font.MeasureString(btnText) * 0.9f;
+        _spriteBatch.DrawString(_font, btnText, new Vector2(btnX + btnW / 2f - textSize.X / 2f, btnY + btnH / 2f - textSize.Y / 2f), 
+                               canCraftSelected ? Color.White : Color.LightGray, 0f, Vector2.Zero, 0.9f, SpriteEffects.None, 0f);
+        
+        _spriteBatch.DrawString(_font, "[F1-F2] Chon | [C/Click] Ren", new Vector2(startX + 30, btnY - 22), Color.Gray, 0f, Vector2.Zero, 0.72f, SpriteEffects.None, 0f);
+    }
+
+    private void DrawIngredientStatus(string itemId, int required, int x, int y)
+    {
+        int owned = GetInventoryItemCount(itemId);
+        string itemName = GetHUDItemName(itemId);
+        string statusText = $"- {itemName}: {owned}/{required}";
+        Color textColor = owned >= required ? Color.LimeGreen : Color.Tomato;
+        _spriteBatch.DrawString(_font, statusText, new Vector2(x, y), textColor, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
     }
 
     private struct SavedMonsterData

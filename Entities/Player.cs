@@ -31,6 +31,9 @@ namespace SandboxTuTien.Entities
         /// <summary>Tọa độ Y trên bản đồ.</summary>
         public float PositionY { get; set; }
 
+        /// <summary>Vị trí 2D dưới dạng Vector2.</summary>
+        public Microsoft.Xna.Framework.Vector2 Position => new Microsoft.Xna.Framework.Vector2(PositionX, PositionY);
+
         // ====================================================================
         // CONSTRUCTOR
         // ====================================================================

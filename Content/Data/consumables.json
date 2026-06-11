@@ -44,5 +44,32 @@
     "tier_required": 0,
     "effects": [],
     "spoilage_time": -1
+  },
+  {
+    "item_id": "mat_thi_thiet_mau",
+    "name": "Thiết Mẫu Thô",
+    "type": "CONSUMABLE",
+    "source": "MONSTER_DROPPED",
+    "tier_required": 0,
+    "effects": [],
+    "spoilage_time": -1
+  },
+  {
+    "item_id": "lo_xo_co_quan",
+    "name": "Lò Xo Cơ Quan",
+    "type": "CONSUMABLE",
+    "source": "MONSTER_DROPPED",
+    "tier_required": 0,
+    "effects": [],
+    "spoilage_time": -1
+  },
+  {
+    "item_id": "day_cung_kim_ti",
+    "name": "Dây Cung Kim Ty",
+    "type": "CONSUMABLE",
+    "source": "MONSTER_DROPPED",
+    "tier_required": 0,
+    "effects": [],
+    "spoilage_time": -1
   }
 ]
