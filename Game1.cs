@@ -182,15 +182,39 @@ public class Game1 : Game
         _pixelTexture = new Texture2D(GraphicsDevice, 1, 1);
         _pixelTexture.SetData(new[] { Color.White });
 
-        _playerTexture = PixelArtGenerator.CreatePlayerTexture(GraphicsDevice);
-        _monsterPlantTexture = PixelArtGenerator.CreateMonsterPlantTexture(GraphicsDevice);
-        _monsterFireTexture = PixelArtGenerator.CreateMonsterFireTexture(GraphicsDevice);
-        _monsterIceTexture = PixelArtGenerator.CreateMonsterIceTexture(GraphicsDevice);
-        _needleTexture = PixelArtGenerator.CreateProjectileNeedleTexture(GraphicsDevice);
-        _boltTexture = PixelArtGenerator.CreateProjectileBoltTexture(GraphicsDevice);
-        _sausageTexture = PixelArtGenerator.CreateSausageTexture(GraphicsDevice);
-        _ringTexture = PixelArtGenerator.CreateRingTexture(GraphicsDevice, 32);
-        _turretTexture = PixelArtGenerator.CreateTurretTexture(GraphicsDevice);
+        _playerTexture = LoadTextureFromFile("Content/Sprites/player.png", () => PixelArtGenerator.CreatePlayerTexture(GraphicsDevice));
+        _monsterPlantTexture = LoadTextureFromFile("Content/Sprites/monster_plant.png", () => PixelArtGenerator.CreateMonsterPlantTexture(GraphicsDevice));
+        _monsterFireTexture = LoadTextureFromFile("Content/Sprites/monster_fire.png", () => PixelArtGenerator.CreateMonsterFireTexture(GraphicsDevice));
+        _monsterIceTexture = LoadTextureFromFile("Content/Sprites/monster_ice.png", () => PixelArtGenerator.CreateMonsterIceTexture(GraphicsDevice));
+        _needleTexture = LoadTextureFromFile("Content/Sprites/needle.png", () => PixelArtGenerator.CreateProjectileNeedleTexture(GraphicsDevice));
+        _boltTexture = LoadTextureFromFile("Content/Sprites/bolt.png", () => PixelArtGenerator.CreateProjectileBoltTexture(GraphicsDevice));
+        _sausageTexture = LoadTextureFromFile("Content/Sprites/sausage.png", () => PixelArtGenerator.CreateSausageTexture(GraphicsDevice));
+        _ringTexture = LoadTextureFromFile("Content/Sprites/ring.png", () => PixelArtGenerator.CreateRingTexture(GraphicsDevice, 32));
+        _turretTexture = LoadTextureFromFile("Content/Sprites/turret.png", () => PixelArtGenerator.CreateTurretTexture(GraphicsDevice));
+    }
+
+    private Texture2D LoadTextureFromFile(string relativePath, Func<Texture2D> fallbackGenerator)
+    {
+        try
+        {
+            string absolutePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, relativePath);
+            if (File.Exists(absolutePath))
+            {
+                using (var stream = File.OpenRead(absolutePath))
+                {
+                    return Texture2D.FromStream(GraphicsDevice, stream);
+                }
+            }
+            else
+            {
+                Console.WriteLine($"[Đồ Họa] File không tồn tại: {absolutePath}. Sử dụng tạo tự động.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Đồ Họa] Không thể tải {relativePath}: {ex.Message}. Sử dụng tạo tự động.");
+        }
+        return fallbackGenerator();
     }
 
     protected override void Update(GameTime gameTime)
@@ -358,10 +382,12 @@ public class Game1 : Game
         {
             if (ring.Active)
             {
-                float scale = 0.5f + 0.08f * (float)Math.Sin(ring.PulseTimer * 5f);
+                float ringScaleFactor = 64f / _ringTexture.Width;
+                float scale = (0.5f + 0.08f * (float)Math.Sin(ring.PulseTimer * 5f)) * ringScaleFactor;
                 float rotation = ring.PulseTimer * 0.7f;
+                Vector2 ringOrigin = new Vector2(_ringTexture.Width / 2f, _ringTexture.Height / 2f);
                 _spriteBatch.Draw(_ringTexture, ring.Position, null, ring.GetColor() * 0.8f,
-                                  rotation, new Vector2(32, 32), scale, SpriteEffects.None, 0f);
+                                  rotation, ringOrigin, scale, SpriteEffects.None, 0f);
             }
         }
 
@@ -385,7 +411,9 @@ public class Game1 : Game
                 Texture2D tex = item.ItemId == "food_huong_trang_01" ? _sausageTexture : _needleTexture;
                 float hoverY = (float)Math.Sin(item.HoverTimer * 4f) * 3f;
                 Vector2 drawPos = new Vector2(item.Position.X, item.Position.Y + hoverY);
-                _spriteBatch.Draw(tex, drawPos, null, Color.White, 0f, new Vector2(tex.Width / 2f, tex.Height / 2f), 1.5f, SpriteEffects.None, 0f);
+                Vector2 itemOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
+                float itemScaleFactor = (item.ItemId == "food_huong_trang_01" ? 16f : 8f) / tex.Width;
+                _spriteBatch.Draw(tex, drawPos, null, Color.White, 0f, itemOrigin, 1.5f * itemScaleFactor, SpriteEffects.None, 0f);
                 _spriteBatch.DrawString(_font, item.Name, drawPos - new Vector2(20, 15), Color.White * 0.8f, 0f, Vector2.Zero, 0.6f, SpriteEffects.None, 0f);
             }
         }
@@ -403,12 +431,17 @@ public class Game1 : Game
                     recoil = 1.0f - 0.25f * t;
                 }
 
+                Vector2 origin = new Vector2(_turretTexture.Width / 2f, _turretTexture.Height / 2f);
+                float turretScaleFactor = 24f / _turretTexture.Width;
+                Vector2 drawScale = new Vector2(1.5f * turretScaleFactor, 1.5f * recoil * turretScaleFactor);
+
                 _spriteBatch.Draw(_turretTexture, launcher.Position, null, Color.White, 0f, 
-                                  new Vector2(12, 12), new Vector2(1.5f, 1.5f * recoil), SpriteEffects.None, 0f);
+                                  origin, drawScale, SpriteEffects.None, 0f);
                 
                 // Vẽ vòng tròn tầm bắn quét nhỏ mờ bao quanh bệ phóng
+                Vector2 ringOrigin = new Vector2(_ringTexture.Width / 2f, _ringTexture.Height / 2f);
                 _spriteBatch.Draw(_ringTexture, launcher.Position, null, Color.White * 0.15f, 
-                                  0f, new Vector2(32, 32), launcher.Range / 32f, SpriteEffects.None, 0f);
+                                  0f, ringOrigin, launcher.Range / (ringOrigin.X), SpriteEffects.None, 0f);
 
                 // Draw current ammo on turret heads
                 string ammoText = launcher.AmmoCount <= 0 ? "EMPTY" : $"{launcher.AmmoCount}/{launcher.MaxAmmo}";
@@ -432,8 +465,8 @@ public class Game1 : Game
                     _ => _monsterPlantTexture
                 };
                 
-                // Quy mô vẽ co dãn dựa trên bán kính va chạm Radius (gốc là 16px -> nhân scale)
-                float scale = (monster.Radius / 16f) * 1.2f;
+                Vector2 monsterOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
+                float scale = (monster.Radius / (tex.Width / 2f)) * 1.2f;
 
                 Color drawColor = Color.White;
                 if (monster.Age >= 100000)
@@ -442,14 +475,15 @@ public class Game1 : Game
                 }
 
                 _spriteBatch.Draw(tex, monster.Position, null, drawColor, 0f, 
-                                  new Vector2(16, 16), scale, SpriteEffects.None, 0f);
+                                  monsterOrigin, scale, SpriteEffects.None, 0f);
 
                 // Draw territorial aura circle if vạn niên or mười vạn niên
                 if (monster.Age >= 10000)
                 {
                     Color auraColor = monster.Age >= 100000 ? Color.Red * 0.15f : Color.Purple * 0.12f;
+                    Vector2 ringOrigin = new Vector2(_ringTexture.Width / 2f, _ringTexture.Height / 2f);
                     _spriteBatch.Draw(_ringTexture, monster.Position, null, auraColor, 
-                                      0f, new Vector2(32, 32), 150f / 32f, SpriteEffects.None, 0f);
+                                      0f, ringOrigin, 150f / (ringOrigin.X), SpriteEffects.None, 0f);
                 }
 
                 // Vẽ thanh HP quái
@@ -480,9 +514,11 @@ public class Game1 : Game
                 // Đạn hệ thường của cơ quan vẽ màu trắng/bạc
                 Color bulletColor = proj.Element == Element.None ? Color.LightGray : Color.White;
                 float rotation = (float)Math.Atan2(proj.Velocity.Y, proj.Velocity.X);
+                Vector2 projOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
+                float projScaleFactor = 8f / tex.Width;
                 
                 _spriteBatch.Draw(tex, proj.Position, null, bulletColor, rotation, 
-                                  new Vector2(4, 4), 1.5f, SpriteEffects.None, 0f);
+                                  projOrigin, 1.5f * projScaleFactor, SpriteEffects.None, 0f);
             }
         }
 
@@ -496,13 +532,17 @@ public class Game1 : Game
                 hover = (float)Math.Sin(gameTimeForDraw * 0.15f) * 4f;
             }
 
+            Vector2 playerOrigin = new Vector2(_playerTexture.Width / 2f, _playerTexture.Height / 2f);
+            float playerScaleFactor = 32f / _playerTexture.Width;
             _spriteBatch.Draw(_playerTexture, new Vector2(_player.PositionX, _player.PositionY + hover), null, Color.White, 0f, 
-                              new Vector2(16, 16), 1.5f, SpriteEffects.None, 0f);
+                              playerOrigin, 1.5f * playerScaleFactor, SpriteEffects.None, 0f);
         }
         else
         {
+            Vector2 playerOrigin = new Vector2(_playerTexture.Width / 2f, _playerTexture.Height / 2f);
+            float playerScaleFactor = 32f / _playerTexture.Width;
             _spriteBatch.Draw(_playerTexture, new Vector2(_player.PositionX, _player.PositionY), null, Color.DimGray, (float)Math.PI / 2f, 
-                              new Vector2(16, 16), 1.5f, SpriteEffects.None, 0f);
+                              playerOrigin, 1.5f * playerScaleFactor, SpriteEffects.None, 0f);
         }
 
         // 5.5. Vẽ các hạt năng lượng (Particles)
