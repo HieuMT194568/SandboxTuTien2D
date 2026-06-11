@@ -12,8 +12,8 @@ namespace SandboxTuTien.Data
     public class MySqlDbManager
     {
         // Cấu hình kết nối MySQL mặc định
-        private readonly string _connectionStringWithoutDb = "Server=localhost;User ID=root;Password=;Port=3306;AllowUserVariables=True;UseAffectedRows=True;";
-        private readonly string _connectionString = "Server=localhost;Database=sandboxtutien;User ID=root;Password=;Port=3306;AllowUserVariables=True;UseAffectedRows=True;";
+        private readonly string _connectionStringWithoutDb = "Server=localhost;User ID=root;Password=123456;Port=3306;AllowUserVariables=True;UseAffectedRows=True;";
+        private readonly string _connectionString = "Server=localhost;Database=sandboxtutien;User ID=root;Password=123456;Port=3306;AllowUserVariables=True;UseAffectedRows=True;";
         private readonly JsonSerializerOptions _jsonOptions;
 
         public bool IsConnected { get; private set; }
