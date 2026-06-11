@@ -85,6 +85,11 @@ public class Game1 : Game
     private readonly List<SoulRingEntity> _soulRings = new();
     private readonly List<FloatingText> _floatingTexts = new();
     private readonly List<AutoLauncher> _launchers = new();
+    private readonly List<Particle> _particles = new();
+
+    private float _shakeTime = 0f;
+    private float _shakeIntensity = 0f;
+    private Vector2 _absorbingRingPosition = Vector2.Zero;
 
     private List<HiddenWeaponData> _hiddenWeapons = null!;
     private List<ConsumableData> _consumables = null!;
@@ -196,8 +201,22 @@ public class Game1 : Game
         // 2. Cập nhật hoạt động của Bệ Phóng Ám Khí tự động
         foreach (var launcher in _launchers)
         {
+            float oldCd = launcher.CooldownTimer;
             launcher.Update(deltaTime, _monsters, _projectilePool);
+            // Kích nổ hạt cơ quan xẹt lửa và rung màn nhẹ khi bệ phóng khai hỏa
+            if (launcher.CooldownTimer > oldCd)
+            {
+                SpawnElementalBurst(launcher.Position, Element.None, 8);
+                TriggerShake(0.08f, 1.5f);
+            }
         }
+
+        // Cập nhật hệ thống hạt (Particles) & Rung màn hình (Screenshake)
+        UpdateParticles(deltaTime);
+        UpdateScreenshake(deltaTime);
+        UpdateProjectileTrails();
+        UpdateMeditationVFX();
+        UpdateAbsorptionVFX();
 
         // Cập nhật Hồn Hoàn rơi
         foreach (var ring in _soulRings)
@@ -228,7 +247,17 @@ public class Game1 : Game
     {
         GraphicsDevice.Clear(new Color(15, 18, 32));
 
-        _spriteBatch.Begin();
+        // Rung giật màn hình
+        Vector2 shakeOffset = Vector2.Zero;
+        if (_shakeTime > 0)
+        {
+            shakeOffset.X = (float)(_random.NextDouble() * 2 - 1) * _shakeIntensity;
+            shakeOffset.Y = (float)(_random.NextDouble() * 2 - 1) * _shakeIntensity;
+        }
+        Matrix transformMatrix = Matrix.CreateTranslation(shakeOffset.X, shakeOffset.Y, 0);
+
+        // Vẽ với PointClamp để giữ pixel art sắc nét, và transformMatrix để rung màn
+        _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp, null, null, null, transformMatrix);
 
         // 1. Vẽ Hồn Hoàn dưới đất
         foreach (var ring in _soulRings)
@@ -247,8 +276,16 @@ public class Game1 : Game
         {
             if (launcher.Active)
             {
+                float recoil = 1.0f;
+                // Hiệu ứng co giật nòng nỏ khi bắn
+                if (launcher.CooldownTimer > launcher.FireRate - 0.2f)
+                {
+                    float t = (launcher.CooldownTimer - (launcher.FireRate - 0.2f)) / 0.2f;
+                    recoil = 1.0f - 0.25f * t;
+                }
+
                 _spriteBatch.Draw(_turretTexture, launcher.Position, null, Color.White, 0f, 
-                                  new Vector2(12, 12), 1.5f, SpriteEffects.None, 0f);
+                                  new Vector2(12, 12), new Vector2(1.5f, 1.5f * recoil), SpriteEffects.None, 0f);
                 
                 // Vẽ vòng tròn tầm bắn quét nhỏ mờ bao quanh bệ phóng
                 _spriteBatch.Draw(_ringTexture, launcher.Position, null, Color.White * 0.15f, 
@@ -312,13 +349,28 @@ public class Game1 : Game
         // 5. Vẽ Player
         if (_player.Cultivation.CurrentState != CultivationState.Dead)
         {
-            _spriteBatch.Draw(_playerTexture, new Vector2(_player.PositionX, _player.PositionY), null, Color.White, 0f, 
+            float hover = 0f;
+            if (_player.Cultivation.CurrentState == CultivationState.Meditating)
+            {
+                // Bập bềnh nhẹ khi thiền định
+                hover = (float)Math.Sin(gameTimeForDraw * 0.15f) * 4f;
+            }
+
+            _spriteBatch.Draw(_playerTexture, new Vector2(_player.PositionX, _player.PositionY + hover), null, Color.White, 0f, 
                               new Vector2(16, 16), 1.5f, SpriteEffects.None, 0f);
         }
         else
         {
             _spriteBatch.Draw(_playerTexture, new Vector2(_player.PositionX, _player.PositionY), null, Color.DimGray, (float)Math.PI / 2f, 
                               new Vector2(16, 16), 1.5f, SpriteEffects.None, 0f);
+        }
+
+        // 5.5. Vẽ các hạt năng lượng (Particles)
+        foreach (var p in _particles)
+        {
+            float alpha = 1f - (p.Elapsed / p.Lifetime);
+            Color drawColor = p.Color * alpha;
+            _spriteBatch.Draw(_pixelTexture, p.Position, null, drawColor, p.Rotation, new Vector2(0.5f, 0.5f), p.Size, SpriteEffects.None, 0f);
         }
 
         // 6. Vẽ chữ nổi
@@ -369,6 +421,14 @@ public class Game1 : Game
 
             _player.PositionX = Math.Clamp(_player.PositionX, 16f, 800f - 16f);
             _player.PositionY = Math.Clamp(_player.PositionY, 175f, 600f - 16f); // Tránh đè HUD
+
+            // Thêm bụi di chuyển chân người chơi
+            if (_random.NextDouble() < 0.15)
+            {
+                var dustPos = new Vector2(_player.PositionX + _random.Next(-6, 6), _player.PositionY + 12);
+                var dustVel = new Vector2(-dir.X * 25f + _random.Next(-5, 5), -dir.Y * 10f + _random.Next(-5, 5));
+                _particles.Add(new Particle(dustPos, dustVel, new Color(130, 115, 100, 150), _random.Next(2, 4), 0.6f, ParticleType.Dust));
+            }
         }
     }
 
@@ -601,6 +661,10 @@ public class Game1 : Game
         var turret = new AutoLauncher(playerPos);
         _launchers.Add(turret);
 
+        // Hiệu ứng khói bụi xẹt lửa khi đặt bệ phóng cơ quan
+        TriggerShake(0.15f, 3.0f);
+        SpawnElementalBurst(playerPos, Element.None, 15);
+
         _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 15), "+ Auto Turret", Color.Gold));
         Console.WriteLine($"[Cơ Quan] ⚙ Đã đặt Bệ Phóng Ám Khí tự động tại vị trí {playerPos.X:F0},{playerPos.Y:F0} (Tổng số: {_launchers.Count}/3).");
     }
@@ -697,6 +761,10 @@ public class Game1 : Game
         
         m.OnKilled += monster =>
         {
+            // Rung lắc màn hình lớn và vụ nổ năng lượng bộc phát
+            TriggerShake(0.35f, 6.0f);
+            SpawnElementalBurst(monster.Position, monster.Element, 25);
+
             // Rơi Hồn Hoàn lưu trữ tuổi thọ và hệ thuộc tính của quái vật!
             var ring = new SoulRingEntity(monster.Position, monster.Age, monster.Element);
             _soulRings.Add(ring);
@@ -728,6 +796,10 @@ public class Game1 : Game
                     Color txtColor = isCounter ? Color.Red : Color.Orange;
                     string dmgText = isCounter ? $"-{finalDmg:F0} COUNTER!" : $"-{finalDmg:F0}";
                     _floatingTexts.Add(new FloatingText(monster.Position - new Vector2(0, 15), dmgText, txtColor, 1.3f, isCounter ? 1.25f : 1.0f));
+
+                    // Rung giật màn hình và sinh tia nổ thuộc tính va chạm
+                    TriggerShake(isCounter ? 0.18f : 0.1f, isCounter ? 4.5f : 2.5f);
+                    SpawnElementalBurst(proj.Position, proj.Element, isCounter ? 12 : 6);
                     break;
                 }
             }
@@ -752,6 +824,7 @@ public class Game1 : Game
 
         if (ring != null)
         {
+            _absorbingRingPosition = ring.Position;
             ring.Active = false;
             _soulRings.Remove(ring);
 
@@ -833,39 +906,31 @@ public class Game1 : Game
         int startY = 15;
         int spacing = 18;
 
-        // Vẽ Khung đen nền HUD
+        // Vẽ Khung đen nền HUD (Chứa beveled border hiệu ứng 3D)
         DrawRect(startX - 10, startY - 5, 305, 155, new Color(20, 22, 38, 220));
         DrawRect(startX - 10, startY - 5, 305, 155, new Color(65, 75, 110), true);
+        DrawRect(startX - 9, startY - 4, 303, 1, new Color(100, 115, 160, 150)); // top inner highlight
 
         // Tên và cảnh giới
         string realmHUD = GetRealmHUDName(cult.CurrentRealm);
         _spriteBatch.DrawString(_font, $"Duong Tam | {realmHUD} (Cap {cult.CurrentLevel})", 
                                 new Vector2(startX, startY), Color.Gold);
 
-        // HP bar
+        // HP bar (Premium render)
         int hpY = startY + spacing + 6;
         float hpRatio = cult.HP / cult.MaxHP;
-        DrawRect(startX, hpY, barW, barH, new Color(50, 15, 15));
-        DrawRect(startX, hpY, (int)(barW * hpRatio), barH, new Color(230, 45, 45));
-        DrawRect(startX, hpY, barW, barH, new Color(120, 40, 40), true);
-        _spriteBatch.DrawString(_font, $"HP: {cult.HP:F0}/{cult.MaxHP:F0}", new Vector2(startX + barW + 10, hpY - 2), Color.Tomato, 0f, Vector2.Zero, 0.82f, SpriteEffects.None, 0f);
+        DrawPremiumBar(startX, hpY, barW, barH, hpRatio, new Color(50, 15, 15), new Color(230, 45, 45), new Color(120, 40, 40), $"HP: {cult.HP:F0}/{cult.MaxHP:F0}", Color.Tomato);
 
-        // EXP bar
+        // EXP bar (Premium render)
         int expY = hpY + spacing;
         float expRatio = cult.CurrentExp / cult.MaxExpForCurrentLevel;
         expRatio = Math.Clamp(expRatio, 0f, 1f);
-        DrawRect(startX, expY, barW, barH, new Color(15, 15, 50));
-        DrawRect(startX, expY, (int)(barW * expRatio), barH, new Color(60, 130, 255));
-        DrawRect(startX, expY, barW, barH, new Color(40, 90, 180), true);
-        _spriteBatch.DrawString(_font, $"EXP: {cult.CurrentExp:F0}/{cult.MaxExpForCurrentLevel:F0}", new Vector2(startX + barW + 10, expY - 2), Color.LightSkyBlue, 0f, Vector2.Zero, 0.82f, SpriteEffects.None, 0f);
+        DrawPremiumBar(startX, expY, barW, barH, expRatio, new Color(15, 15, 50), new Color(60, 130, 255), new Color(40, 90, 180), $"EXP: {cult.CurrentExp:F0}/{cult.MaxExpForCurrentLevel:F0}", Color.LightSkyBlue);
 
-        // Hồn Lực bar
+        // Hồn Lực bar (Premium render)
         int spY = expY + spacing;
         float spRatio = cult.SoulPower / cult.MaxSoulPower;
-        DrawRect(startX, spY, barW, barH, new Color(10, 45, 20));
-        DrawRect(startX, spY, (int)(barW * spRatio), barH, new Color(45, 210, 110));
-        DrawRect(startX, spY, barW, barH, new Color(30, 130, 70), true);
-        _spriteBatch.DrawString(_font, $"SP: {cult.SoulPower:F0}/{cult.MaxSoulPower:F0}", new Vector2(startX + barW + 10, spY - 2), Color.MediumSpringGreen, 0f, Vector2.Zero, 0.82f, SpriteEffects.None, 0f);
+        DrawPremiumBar(startX, spY, barW, barH, spRatio, new Color(10, 45, 20), new Color(45, 210, 110), new Color(30, 130, 70), $"SP: {cult.SoulPower:F0}/{cult.MaxSoulPower:F0}", Color.MediumSpringGreen);
 
         // Ám khí hiện tại + Danh sách bệ phóng
         int wY = spY + spacing;
@@ -906,6 +971,7 @@ public class Game1 : Game
         int skillY = 15;
         DrawRect(skillX, skillY, 165, 140, new Color(20, 22, 38, 220));
         DrawRect(skillX, skillY, 165, 140, new Color(65, 75, 110), true);
+        DrawRect(skillX + 1, skillY + 1, 163, 1, new Color(100, 115, 160, 150)); // top inner highlight
         _spriteBatch.DrawString(_font, "HON KY CHU DONG", new Vector2(skillX + 10, skillY + 8), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
         DrawRect(skillX + 8, skillY + 24, 149, 1, new Color(65, 75, 110));
 
@@ -929,6 +995,7 @@ public class Game1 : Game
         int guideY = 540;
         DrawRect(20, guideY, 760, 50, new Color(18, 18, 30, 220));
         DrawRect(20, guideY, 760, 50, new Color(55, 60, 85), true);
+        DrawRect(21, guideY + 1, 758, 1, new Color(90, 100, 135, 150)); // top inner highlight
         _spriteBatch.DrawString(_font, "[WASD]: Move | [Left Click]: Normal Fire | [Right Click]: Spawn Monster | [T]: Place Turret", new Vector2(35, guideY + 5), Color.Silver, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
         _spriteBatch.DrawString(_font, "[I]: Inventory | [E]: Switch Weapon | [1-5]: Quick Eat | [R]: Absorb Ring | [Q/W]: Cast Skills", new Vector2(35, guideY + 26), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
     }
@@ -943,6 +1010,7 @@ public class Game1 : Game
         // Vẽ Nền
         DrawRect(startX, startY, width, height, new Color(24, 26, 45, 230));
         DrawRect(startX, startY, width, height, new Color(80, 95, 140), true);
+        DrawRect(startX + 1, startY + 1, width - 2, 1, new Color(110, 130, 190, 150)); // top inner highlight
 
         // Vẽ Tiêu đề
         _spriteBatch.DrawString(_font, "TUI DO (INVENTORY)", new Vector2(startX + 38, startY + 15), Color.Gold, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0f);
@@ -1117,6 +1185,228 @@ public class Game1 : Game
         {
             Console.WriteLine($"[EVENT] ☠ TỬ VONG: {e.PlayerName} — {e.CauseOfDeath}");
             _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 60), "DEAD!", Color.DarkRed, 4.0f, 1.4f));
+            TriggerShake(0.8f, 10.0f);
+            SpawnExplosion(new Vector2(_player.PositionX, _player.PositionY), Color.DarkRed, 40);
         });
+    }
+
+    // ====================================================================
+    // HIỆU ỨNG HẠT, RUNG MÀN HÌNH VÀ THANH MÁU CAO CẤP
+    // ====================================================================
+
+    private void TriggerShake(float duration, float intensity)
+    {
+        _shakeTime = duration;
+        _shakeIntensity = intensity;
+    }
+
+    private void UpdateParticles(float deltaTime)
+    {
+        for (int i = _particles.Count - 1; i >= 0; i--)
+        {
+            _particles[i].Update(deltaTime);
+            if (!_particles[i].Active)
+            {
+                _particles.RemoveAt(i);
+            }
+        }
+    }
+
+    private void UpdateScreenshake(float deltaTime)
+    {
+        if (_shakeTime > 0)
+        {
+            _shakeTime -= deltaTime;
+            if (_shakeTime <= 0)
+            {
+                _shakeIntensity = 0f;
+            }
+        }
+    }
+
+    private void UpdateProjectileTrails()
+    {
+        foreach (var proj in _projectilePool.Projectiles)
+        {
+            if (!proj.Active) continue;
+
+            if (_random.NextDouble() < 0.35)
+            {
+                Vector2 spawnPos = proj.Position - proj.Velocity * 0.02f; // Phía sau đạn một chút
+                Vector2 vel = new Vector2((float)(_random.NextDouble() * 10 - 5), (float)(_random.NextDouble() * 10 - 5));
+
+                Color pColor;
+                ParticleType pType;
+                float size = (float)(_random.NextDouble() * 2 + 1.5);
+
+                switch (proj.Element)
+                {
+                    case Element.Wood:
+                        pColor = new Color(50, 220, 120, 200);
+                        pType = ParticleType.Leaf;
+                        break;
+                    case Element.Fire:
+                        pColor = new Color(255, 120, 20, 220);
+                        pType = ParticleType.Ember;
+                        break;
+                    case Element.Ice:
+                        pColor = new Color(130, 220, 255, 200);
+                        pType = ParticleType.Snow;
+                        break;
+                    default:
+                        pColor = new Color(200, 200, 200, 180);
+                        pType = ParticleType.Spark;
+                        size = (float)(_random.NextDouble() * 1.5 + 1.0);
+                        break;
+                }
+
+                _particles.Add(new Particle(spawnPos, vel, pColor, size, (float)(_random.NextDouble() * 0.4 + 0.3), pType));
+            }
+        }
+    }
+
+    private void UpdateMeditationVFX()
+    {
+        var cult = _player.Cultivation;
+        if (cult.CurrentState == CultivationState.Meditating)
+        {
+            if (_random.NextDouble() < 0.12)
+            {
+                // Hạt khí bay lên từ xung quanh cơ thể
+                Vector2 pos = new Vector2(_player.PositionX + _random.Next(-12, 12), _player.PositionY + _random.Next(-4, 12));
+                Vector2 vel = new Vector2(0, -25f);
+                Color auraColor = _random.Next(2) == 0 ? Color.Gold * 0.8f : Color.SkyBlue * 0.8f;
+                _particles.Add(new Particle(pos, vel, auraColor, (float)(_random.NextDouble() * 2.5 + 1.5), (float)(_random.NextDouble() * 0.8 + 0.6), ParticleType.Aura));
+            }
+        }
+    }
+
+    private void UpdateAbsorptionVFX()
+    {
+        var cult = _player.Cultivation;
+        if (cult.CurrentState == CultivationState.AbsorbingRing)
+        {
+            if (_random.NextDouble() < 0.25)
+            {
+                // Hạt khí cuộn tròn từ bệ hồn hoàn bay về phía người chơi
+                Vector2 playerCenter = new Vector2(_player.PositionX, _player.PositionY);
+                Vector2 spawnPos = _absorbingRingPosition + new Vector2((float)(_random.NextDouble() * 40 - 20), (float)(_random.NextDouble() * 40 - 20));
+                
+                Vector2 dir = playerCenter - spawnPos;
+                float dist = dir.Length();
+                if (dist > 5f)
+                {
+                    dir.Normalize();
+                    Vector2 vel = dir * (dist * 1.5f + 50f);
+                    
+                    Color ringColor = cult.HP < cult.MaxHP * 0.4f ? Color.Red * 0.9f : Color.Purple * 0.9f; 
+                    if (_random.Next(3) == 0) ringColor = Color.Gold * 0.9f;
+
+                    _particles.Add(new Particle(spawnPos, vel, ringColor, (float)(_random.NextDouble() * 2 + 1.5), 0.7f, ParticleType.Spark));
+                }
+            }
+        }
+    }
+
+    private void SpawnElementalBurst(Vector2 position, Element element, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            double angle = _random.NextDouble() * Math.PI * 2;
+            float speed = (float)(_random.NextDouble() * 120 + 40);
+            Vector2 vel = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle)) * speed;
+            
+            Color pColor;
+            ParticleType pType;
+            float size = (float)(_random.NextDouble() * 3.0 + 1.5);
+            float lifetime = (float)(_random.NextDouble() * 0.5 + 0.3);
+
+            switch (element)
+            {
+                case Element.Wood:
+                    pColor = new Color(50, 220, 120, 220);
+                    pType = ParticleType.Leaf;
+                    break;
+                case Element.Fire:
+                    pColor = new Color(255, 120, 20, 240);
+                    pType = ParticleType.Ember;
+                    break;
+                case Element.Ice:
+                    pColor = new Color(130, 220, 255, 220);
+                    pType = ParticleType.Snow;
+                    break;
+                default:
+                    pColor = new Color(220, 220, 220, 200);
+                    pType = ParticleType.Spark;
+                    size = (float)(_random.NextDouble() * 2.0 + 1.0);
+                    break;
+            }
+
+            _particles.Add(new Particle(position, vel, pColor, size, lifetime, pType));
+        }
+    }
+
+    private void SpawnExplosion(Vector2 position, Color color, int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            double angle = _random.NextDouble() * Math.PI * 2;
+            float speed = (float)(_random.NextDouble() * 150 + 60);
+            Vector2 vel = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle)) * speed;
+            float size = (float)(_random.NextDouble() * 4.0 + 2.0);
+            float lifetime = (float)(_random.NextDouble() * 0.7 + 0.4);
+
+            _particles.Add(new Particle(position, vel, color, size, lifetime, ParticleType.Burst));
+        }
+    }
+
+    private void SpawnBreakthroughBurst(Vector2 position)
+    {
+        int count = 50;
+        for (int i = 0; i < count; i++)
+        {
+            double angle = _random.NextDouble() * Math.PI * 2;
+            float speed = (float)(_random.NextDouble() * 180 + 80);
+            Vector2 vel = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle)) * speed;
+            float size = (float)(_random.NextDouble() * 4.5 + 2.5);
+            float lifetime = (float)(_random.NextDouble() * 0.9 + 0.5);
+
+            Color pColor = (i % 3) switch
+            {
+                0 => Color.Gold,
+                1 => Color.Yellow,
+                _ => Color.DeepSkyBlue
+            };
+
+            _particles.Add(new Particle(position, vel, pColor, size, lifetime, ParticleType.Burst));
+        }
+    }
+
+    private void DrawPremiumBar(int x, int y, int width, int height, float ratio, Color bgColor, Color barColor, Color borderColor, string label, Color textColor)
+    {
+        // Vẽ Nền
+        DrawRect(x, y, width, height, bgColor);
+        
+        // Vẽ phần thanh tiến trình
+        int fillWidth = (int)(width * Math.Clamp(ratio, 0f, 1f));
+        if (fillWidth > 0)
+        {
+            DrawRect(x, y, fillWidth, height, barColor);
+            
+            // Hiệu ứng Glassy 3D - Nửa trên sáng bóng
+            DrawRect(x, y, fillWidth, Math.Max(1, height / 3), Color.White * 0.22f);
+            
+            // Hiệu ứng Glassy 3D - Nửa dưới bóng mờ
+            DrawRect(x, y + height - Math.Max(1, height / 3), fillWidth, Math.Max(1, height / 3), Color.Black * 0.18f);
+        }
+        
+        // Vẽ viền ngoài
+        DrawRect(x, y, width, height, borderColor, true);
+        
+        // Vẽ nhãn văn bản
+        if (!string.IsNullOrEmpty(label))
+        {
+            _spriteBatch.DrawString(_font, label, new Vector2(x + width + 10, y - 2), textColor, 0f, Vector2.Zero, 0.82f, SpriteEffects.None, 0f);
+        }
     }
 }
