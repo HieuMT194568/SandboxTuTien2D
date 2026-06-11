@@ -67,6 +67,8 @@ public class Game1 : Game
     private Texture2D _sausageTexture = null!;
     private Texture2D _ringTexture = null!;
     private Texture2D _turretTexture = null!;
+    private Texture2D _oscarTexture = null!;
+    private Texture2D _anvilTexture = null!;
 
     // ========================================================================
     // HỆ THỐNG CỐT LÕI
@@ -95,6 +97,9 @@ public class Game1 : Game
     private float _shakeTime = 0f;
     private float _shakeIntensity = 0f;
     private Vector2 _absorbingRingPosition = Vector2.Zero;
+    private Vector2 _cameraPosition = Vector2.Zero;
+    private const float MAP_WIDTH = 2000f;
+    private const float MAP_HEIGHT = 2000f;
 
     private List<HiddenWeaponData> _hiddenWeapons = null!;
     private List<ConsumableData> _consumables = null!;
@@ -171,6 +176,20 @@ public class Game1 : Game
         _previousKeyState = Keyboard.GetState();
         _previousMouseState = Mouse.GetState();
 
+        // Sinh ngẫu nhiên một số Hồn Thú ban đầu rải rác trên bản đồ để thế giới sống động
+        for (int i = 0; i < 15; i++)
+        {
+            Vector2 randomPos = new Vector2(
+                _random.Next(100, 1900),
+                _random.Next(100, 1900)
+            );
+            // Không sinh quá gần người chơi (tọa độ xuất phát 400, 240)
+            if (Vector2.Distance(randomPos, new Vector2(400, 240)) > 200f)
+            {
+                SpawnRandomMonster(randomPos);
+            }
+        }
+
         base.Initialize();
     }
 
@@ -191,6 +210,8 @@ public class Game1 : Game
         _sausageTexture = LoadTextureFromFile("Content/Sprites/sausage.png", () => PixelArtGenerator.CreateSausageTexture(GraphicsDevice));
         _ringTexture = LoadTextureFromFile("Content/Sprites/ring.png", () => PixelArtGenerator.CreateRingTexture(GraphicsDevice, 32));
         _turretTexture = LoadTextureFromFile("Content/Sprites/turret.png", () => PixelArtGenerator.CreateTurretTexture(GraphicsDevice));
+        _oscarTexture = LoadTextureFromFile("Content/Sprites/oscar.png", () => PixelArtGenerator.CreatePlayerTexture(GraphicsDevice));
+        _anvilTexture = LoadTextureFromFile("Content/Sprites/anvil.png", () => PixelArtGenerator.CreateTurretTexture(GraphicsDevice));
     }
 
     private Texture2D LoadTextureFromFile(string relativePath, Func<Texture2D> fallbackGenerator)
@@ -234,6 +255,12 @@ public class Game1 : Game
         UpdatePlayerMovement(currentKeyState, deltaTime);
 
         Vector2 playerPos = new Vector2(_player.PositionX, _player.PositionY);
+
+        // Cập nhật Camera bám theo nhân vật một cách mượt mà (Lerp)
+        Vector2 targetCamera = new Vector2(_player.PositionX - 400f, _player.PositionY - 300f);
+        _cameraPosition = Vector2.Lerp(_cameraPosition, targetCamera, 0.1f);
+        _cameraPosition.X = Math.Clamp(_cameraPosition.X, 0f, MAP_WIDTH - 800f);
+        _cameraPosition.Y = Math.Clamp(_cameraPosition.Y, 0f, MAP_HEIGHT - 600f);
 
         // 1. Cập nhật Hồn Thú tự động tiến hóa theo tuổi thọ (1s thực = 24 phút game)
         for (int i = _monsters.Count - 1; i >= 0; i--)
@@ -372,10 +399,53 @@ public class Game1 : Game
             shakeOffset.X = (float)(_random.NextDouble() * 2 - 1) * _shakeIntensity;
             shakeOffset.Y = (float)(_random.NextDouble() * 2 - 1) * _shakeIntensity;
         }
-        Matrix transformMatrix = Matrix.CreateTranslation(shakeOffset.X, shakeOffset.Y, 0);
 
-        // Vẽ với PointClamp để giữ pixel art sắc nét, và transformMatrix để rung màn
-        _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp, null, null, null, transformMatrix);
+        // Ma trận camera + màn hình rung
+        Matrix worldTransform = Matrix.CreateTranslation(-_cameraPosition.X + shakeOffset.X, -_cameraPosition.Y + shakeOffset.Y, 0);
+
+        float gameTimeForDraw = (float)gameTime.TotalGameTime.TotalSeconds;
+
+        // ====================================================================
+        // PASS 1: RENDER WORLD SPRITES (PointClamp để giữ pixel art sắc nét)
+        // ====================================================================
+        _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp, null, null, null, worldTransform);
+
+        // 0. Vẽ Nền Đất Tiled Background cao cấp
+        int tileSize = 64;
+        int startTileX = (int)(_cameraPosition.X / tileSize) - 1;
+        int startTileY = (int)(_cameraPosition.Y / tileSize) - 1;
+        int endTileX = (int)((_cameraPosition.X + 800f) / tileSize) + 1;
+        int endTileY = (int)((_cameraPosition.Y + 600f) / tileSize) + 1;
+
+        startTileX = Math.Max(0, startTileX);
+        startTileY = Math.Max(0, startTileY);
+        endTileX = Math.Min((int)(MAP_WIDTH / tileSize), endTileX);
+        endTileY = Math.Min((int)(MAP_HEIGHT / tileSize), endTileY);
+
+        for (int tx = startTileX; tx <= endTileX; tx++)
+        {
+            for (int ty = startTileY; ty <= endTileY; ty++)
+            {
+                Rectangle tileRect = new Rectangle(tx * tileSize, ty * tileSize, tileSize, tileSize);
+                Color tileColor = ((tx + ty) % 2 == 0) ? new Color(18, 22, 36) : new Color(14, 17, 30);
+                _spriteBatch.Draw(_pixelTexture, tileRect, tileColor);
+
+                // Viền lưới nhẹ nhàng
+                DrawRect(tx * tileSize, ty * tileSize, tileSize, 1, new Color(28, 33, 52) * 0.4f);
+                DrawRect(tx * tileSize, ty * tileSize, 1, tileSize, new Color(28, 33, 52) * 0.4f);
+
+                // Các vì sao tinh tú/linh khí phát sáng ngẫu nhiên định sẵn
+                int hash = (tx * 17 + ty * 31) % 100;
+                if (hash < 12)
+                {
+                    int starOffset = (tx * 7 + ty * 13) % (tileSize - 20) + 10;
+                    Vector2 starPos = new Vector2(tx * tileSize + starOffset, ty * tileSize + starOffset);
+                    Color starColor = (hash % 3 == 0) ? Color.Cyan * 0.25f : 
+                                      (hash % 3 == 1) ? Color.Gold * 0.2f : Color.MediumPurple * 0.25f;
+                    _spriteBatch.Draw(_pixelTexture, new Rectangle((int)starPos.X, (int)starPos.Y, 2, 2), starColor);
+                }
+            }
+        }
 
         // 1. Vẽ Hồn Hoàn dưới đất
         foreach (var ring in _soulRings)
@@ -391,19 +461,20 @@ public class Game1 : Game
             }
         }
 
-        // Draw NPC Oscar
+        // 1.5. Vẽ NPC Oscar và Anvil bằng các model .png xianxia premium mới
+        // Oscar NPC
         Vector2 oscarPos = new Vector2(250, 380);
-        DrawRect((int)oscarPos.X - 10, (int)oscarPos.Y - 10, 20, 20, Color.Pink);
-        DrawRect((int)oscarPos.X - 10, (int)oscarPos.Y - 10, 20, 20, Color.DeepPink, true);
-        _spriteBatch.DrawString(_font, "Oscar", oscarPos - new Vector2(18, 25), Color.Pink, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
+        Vector2 oscarOrigin = new Vector2(_oscarTexture.Width / 2f, _oscarTexture.Height / 2f);
+        float oscarScale = 32f / _oscarTexture.Width;
+        _spriteBatch.Draw(_oscarTexture, oscarPos, null, Color.White, 0f, oscarOrigin, 1.5f * oscarScale, SpriteEffects.None, 0f);
 
-        // Draw Anvil Spawner
+        // Anvil Spawner
         Vector2 anvilPos = new Vector2(550, 380);
-        DrawRect((int)anvilPos.X - 12, (int)anvilPos.Y - 8, 24, 16, Color.DarkGray);
-        DrawRect((int)anvilPos.X - 12, (int)anvilPos.Y - 8, 24, 16, Color.Black, true);
-        _spriteBatch.DrawString(_font, "Anvil", anvilPos - new Vector2(16, 23), Color.LightGray, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
+        Vector2 anvilOrigin = new Vector2(_anvilTexture.Width / 2f, _anvilTexture.Height / 2f);
+        float anvilScale = 32f / _anvilTexture.Width;
+        _spriteBatch.Draw(_anvilTexture, anvilPos, null, Color.White, 0f, anvilOrigin, 1.5f * anvilScale, SpriteEffects.None, 0f);
 
-        // Draw Dropped Items
+        // 2. Vẽ các Dropped Item (chỉ phần hình ảnh)
         foreach (var item in _droppedItems)
         {
             if (item.Active)
@@ -414,17 +485,15 @@ public class Game1 : Game
                 Vector2 itemOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
                 float itemScaleFactor = (item.ItemId == "food_huong_trang_01" ? 16f : 8f) / tex.Width;
                 _spriteBatch.Draw(tex, drawPos, null, Color.White, 0f, itemOrigin, 1.5f * itemScaleFactor, SpriteEffects.None, 0f);
-                _spriteBatch.DrawString(_font, item.Name, drawPos - new Vector2(20, 15), Color.White * 0.8f, 0f, Vector2.Zero, 0.6f, SpriteEffects.None, 0f);
             }
         }
 
-        // 2. Vẽ các Bệ Phóng Ám Khí tự động xuống đất
+        // 3. Vẽ các Bệ Phóng Ám Khí tự động xuống đất (chỉ phần hình ảnh + vòng quét)
         foreach (var launcher in _launchers)
         {
             if (launcher.Active)
             {
                 float recoil = 1.0f;
-                // Hiệu ứng co giật nòng nỏ khi bắn
                 if (launcher.CooldownTimer > launcher.FireRate - 0.2f)
                 {
                     float t = (launcher.CooldownTimer - (launcher.FireRate - 0.2f)) / 0.2f;
@@ -438,21 +507,13 @@ public class Game1 : Game
                 _spriteBatch.Draw(_turretTexture, launcher.Position, null, Color.White, 0f, 
                                   origin, drawScale, SpriteEffects.None, 0f);
                 
-                // Vẽ vòng tròn tầm bắn quét nhỏ mờ bao quanh bệ phóng
                 Vector2 ringOrigin = new Vector2(_ringTexture.Width / 2f, _ringTexture.Height / 2f);
                 _spriteBatch.Draw(_ringTexture, launcher.Position, null, Color.White * 0.15f, 
                                   0f, ringOrigin, launcher.Range / (ringOrigin.X), SpriteEffects.None, 0f);
-
-                // Draw current ammo on turret heads
-                string ammoText = launcher.AmmoCount <= 0 ? "EMPTY" : $"{launcher.AmmoCount}/{launcher.MaxAmmo}";
-                Color ammoColor = launcher.AmmoCount <= 0 ? Color.Red : Color.LimeGreen;
-                Vector2 textSz = _font.MeasureString(ammoText) * 0.6f;
-                _spriteBatch.DrawString(_font, ammoText, launcher.Position - new Vector2(textSz.X / 2f, 25f), 
-                                        ammoColor, 0f, Vector2.Zero, 0.6f, SpriteEffects.None, 0f);
             }
         }
 
-        // 3. Vẽ Hồn Thú (Kích thước co dãn theo bán kính va chạm)
+        // 4. Vẽ Hồn Thú (chỉ hình ảnh + vòng hào quang)
         foreach (var monster in _monsters)
         {
             if (monster.Active)
@@ -477,7 +538,6 @@ public class Game1 : Game
                 _spriteBatch.Draw(tex, monster.Position, null, drawColor, 0f, 
                                   monsterOrigin, scale, SpriteEffects.None, 0f);
 
-                // Draw territorial aura circle if vạn niên or mười vạn niên
                 if (monster.Age >= 10000)
                 {
                     Color auraColor = monster.Age >= 100000 ? Color.Red * 0.15f : Color.Purple * 0.12f;
@@ -485,33 +545,15 @@ public class Game1 : Game
                     _spriteBatch.Draw(_ringTexture, monster.Position, null, auraColor, 
                                       0f, ringOrigin, 150f / (ringOrigin.X), SpriteEffects.None, 0f);
                 }
-
-                // Vẽ thanh HP quái
-                int hpBarW = (int)(monster.Radius * 1.8f);
-                int hpBarH = 4;
-                int hpX = (int)monster.Position.X - hpBarW / 2;
-                int hpY = (int)monster.Position.Y - (int)(monster.Radius + 6);
-                float hpRatio = monster.HP / monster.MaxHP;
-
-                DrawRect(hpX, hpY, hpBarW, hpBarH, Color.Black);
-                DrawRect(hpX, hpY, (int)(hpBarW * hpRatio), hpBarH, Color.Red);
-                
-                // Tên Hồn thú cải tiến theo tu vi tiến hóa
-                string rankName = monster.Name;
-                Vector2 labelSize = _font.MeasureString(rankName) * 0.7f;
-                _spriteBatch.DrawString(_font, rankName, new Vector2(monster.Position.X - labelSize.X / 2f, hpY - 14), 
-                                        Color.Yellow, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
             }
         }
 
-        // 4. Vẽ đạn ám khí
+        // 5. Vẽ đạn ám khí (chỉ phần hình ảnh)
         foreach (var proj in _projectilePool.Projectiles)
         {
             if (proj.Active)
             {
                 Texture2D tex = proj.Element == Element.Fire ? _boltTexture : _needleTexture;
-                
-                // Đạn hệ thường của cơ quan vẽ màu trắng/bạc
                 Color bulletColor = proj.Element == Element.None ? Color.LightGray : Color.White;
                 float rotation = (float)Math.Atan2(proj.Velocity.Y, proj.Velocity.X);
                 Vector2 projOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
@@ -522,13 +564,12 @@ public class Game1 : Game
             }
         }
 
-        // 5. Vẽ Player
+        // 6. Vẽ Player (chỉ phần hình ảnh)
         if (_player.Cultivation.CurrentState != CultivationState.Dead)
         {
             float hover = 0f;
             if (_player.Cultivation.CurrentState == CultivationState.Meditating)
             {
-                // Bập bềnh nhẹ khi thiền định
                 hover = (float)Math.Sin(gameTimeForDraw * 0.15f) * 4f;
             }
 
@@ -545,7 +586,7 @@ public class Game1 : Game
                               playerOrigin, 1.5f * playerScaleFactor, SpriteEffects.None, 0f);
         }
 
-        // 5.5. Vẽ các hạt năng lượng (Particles)
+        // 7. Vẽ các hạt năng lượng (Particles)
         foreach (var p in _particles)
         {
             float alpha = 1f - (p.Elapsed / p.Lifetime);
@@ -553,7 +594,64 @@ public class Game1 : Game
             _spriteBatch.Draw(_pixelTexture, p.Position, null, drawColor, p.Rotation, new Vector2(0.5f, 0.5f), p.Size, SpriteEffects.None, 0f);
         }
 
-        // 6. Vẽ chữ nổi
+        _spriteBatch.End();
+
+        // ====================================================================
+        // PASS 2: RENDER WORLD UI/TEXT/BARS (LinearClamp để chữ KHÔNG bị nhòe/mất dòng)
+        // ====================================================================
+        _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, null, null, null, worldTransform);
+
+        // Nhãn tên NPC Oscar & Anvil
+        _spriteBatch.DrawString(_font, "Oscar", oscarPos - new Vector2(18, _oscarTexture.Height * 1.5f * oscarScale / 2f + 15f), Color.Pink, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, "Anvil", anvilPos - new Vector2(16, _anvilTexture.Height * 1.5f * anvilScale / 2f + 15f), Color.LightGray, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
+
+        // Nhãn tên Dropped Item
+        foreach (var item in _droppedItems)
+        {
+            if (item.Active)
+            {
+                Texture2D tex = item.ItemId == "food_huong_trang_01" ? _sausageTexture : _needleTexture;
+                float hoverY = (float)Math.Sin(item.HoverTimer * 4f) * 3f;
+                Vector2 drawPos = new Vector2(item.Position.X, item.Position.Y + hoverY);
+                _spriteBatch.DrawString(_font, item.Name, drawPos - new Vector2(20, 15), Color.White * 0.8f, 0f, Vector2.Zero, 0.6f, SpriteEffects.None, 0f);
+            }
+        }
+
+        // Thông tin đạn bệ phóng
+        foreach (var launcher in _launchers)
+        {
+            if (launcher.Active)
+            {
+                string ammoText = launcher.AmmoCount <= 0 ? "EMPTY" : $"{launcher.AmmoCount}/{launcher.MaxAmmo}";
+                Color ammoColor = launcher.AmmoCount <= 0 ? Color.Red : Color.LimeGreen;
+                Vector2 textSz = _font.MeasureString(ammoText) * 0.6f;
+                _spriteBatch.DrawString(_font, ammoText, launcher.Position - new Vector2(textSz.X / 2f, 25f), 
+                                        ammoColor, 0f, Vector2.Zero, 0.6f, SpriteEffects.None, 0f);
+            }
+        }
+
+        // Nhãn HP bar & tên Hồn Thú
+        foreach (var monster in _monsters)
+        {
+            if (monster.Active)
+            {
+                int hpBarW = (int)(monster.Radius * 1.8f);
+                int hpBarH = 4;
+                int hpX = (int)monster.Position.X - hpBarW / 2;
+                int hpY = (int)monster.Position.Y - (int)(monster.Radius + 6);
+                float hpRatio = monster.HP / monster.MaxHP;
+
+                DrawRect(hpX, hpY, hpBarW, hpBarH, Color.Black);
+                DrawRect(hpX, hpY, (int)(hpBarW * hpRatio), hpBarH, Color.Red);
+                
+                string rankName = monster.Name;
+                Vector2 labelSize = _font.MeasureString(rankName) * 0.7f;
+                _spriteBatch.DrawString(_font, rankName, new Vector2(monster.Position.X - labelSize.X / 2f, hpY - 14), 
+                                        Color.Yellow, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
+            }
+        }
+
+        // Floating texts (Damage numbers, Exp popups)
         foreach (var ft in _floatingTexts)
         {
             float alpha = 1f - (ft.Elapsed / ft.Lifetime);
@@ -561,10 +659,17 @@ public class Game1 : Game
                                     0f, Vector2.Zero, ft.Scale, SpriteEffects.None, 0f);
         }
 
-        // 7. Vẽ HUD
+        _spriteBatch.End();
+
+        // ====================================================================
+        // PASS 3: RENDER SCREEN SPACE UI/HUD (LinearClamp, Tọa độ màn hình tĩnh)
+        // ====================================================================
+        _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, null, null, null, null);
+
+        // Vẽ HUD góc trên trái
         DrawHUD();
 
-        // 8. Vẽ túi đồ
+        // Vẽ túi đồ nếu đang mở
         if (_isInventoryOpen)
         {
             DrawInventoryUI();
@@ -599,8 +704,8 @@ public class Game1 : Game
             _player.PositionX += dir.X * speed * deltaTime;
             _player.PositionY += dir.Y * speed * deltaTime;
 
-            _player.PositionX = Math.Clamp(_player.PositionX, 16f, 800f - 16f);
-            _player.PositionY = Math.Clamp(_player.PositionY, 175f, 600f - 16f); // Tránh đè HUD
+            _player.PositionX = Math.Clamp(_player.PositionX, 16f, MAP_WIDTH - 16f);
+            _player.PositionY = Math.Clamp(_player.PositionY, 16f, MAP_HEIGHT - 16f);
 
             // Thêm bụi di chuyển chân người chơi
             if (_random.NextDouble() < 0.15)
@@ -614,6 +719,8 @@ public class Game1 : Game
 
     private void HandleInput(KeyboardState keys, MouseState mouse)
     {
+        Vector2 mouseWorldPos = mouse.Position.ToVector2() + _cameraPosition;
+
         if (IsKeyJustPressed(keys, Keys.M))
         {
             var cult = _player.Cultivation;
@@ -656,13 +763,13 @@ public class Game1 : Game
         // --- Bấm phím [Q] để kích hoạt Hồn kỹ 1 ---
         if (IsKeyJustPressed(keys, Keys.Q))
         {
-            TriggerActiveSkill(1, mouse.Position.ToVector2());
+            TriggerActiveSkill(1, mouseWorldPos);
         }
 
         // --- Bấm phím [W] để kích hoạt Hồn kỹ 2 ---
         if (IsKeyJustPressed(keys, Keys.W))
         {
-            TriggerActiveSkill(2, mouse.Position.ToVector2());
+            TriggerActiveSkill(2, mouseWorldPos);
         }
 
         // --- Bấm phím [T] để đặt bệ phóng ám khí tự động (Auto-Turret) ---
@@ -737,14 +844,14 @@ public class Game1 : Game
                 _player.Cultivation.CurrentState != CultivationState.Dead && 
                 _player.Cultivation.CurrentState != CultivationState.AbsorbingRing)
             {
-                FireActiveWeapon(mouse.Position.ToVector2());
+                FireActiveWeapon(mouseWorldPos);
             }
         }
 
         // Click chuột phải spawn quái
         if (mouse.RightButton == ButtonState.Pressed && _previousMouseState.RightButton == ButtonState.Released)
         {
-            SpawnRandomMonster(mouse.Position.ToVector2());
+            SpawnRandomMonster(mouseWorldPos);
         }
     }
 
@@ -1388,8 +1495,10 @@ public class Game1 : Game
 
                 if (iconTex != null)
                 {
+                    float maxIconDim = 32f;
+                    float iconScale = maxIconDim / Math.Max(iconTex.Width, iconTex.Height);
                     _spriteBatch.Draw(iconTex, new Vector2(slotStartX + 25, sY + slotHeight / 2f), null, Color.White, 0f, 
-                                      new Vector2(iconTex.Width / 2f, iconTex.Height / 2f), 2.0f, SpriteEffects.None, 0f);
+                                      new Vector2(iconTex.Width / 2f, iconTex.Height / 2f), iconScale, SpriteEffects.None, 0f);
                 }
 
                 string nameHUD = GetHUDItemName(item.ItemId);

@@ -106,8 +106,8 @@ namespace SandboxTuTien.Entities
                     fleeDir.Normalize();
                     Position += fleeDir * 120f * deltaTime; // Chạy nhanh
                     Position = new Vector2(
-                        Math.Clamp(Position.X, 16f, 800f - 16f),
-                        Math.Clamp(Position.Y, 175f, 600f - 16f)
+                        Math.Clamp(Position.X, 16f, 2000f - 16f),
+                        Math.Clamp(Position.Y, 16f, 2000f - 16f)
                     );
                 }
             }
@@ -134,8 +134,8 @@ namespace SandboxTuTien.Entities
                     Position += _roamDir * 25f * deltaTime;
                 }
                 Position = new Vector2(
-                    Math.Clamp(Position.X, 16f, 800f - 16f),
-                    Math.Clamp(Position.Y, 175f, 600f - 16f)
+                    Math.Clamp(Position.X, 16f, 2000f - 16f),
+                    Math.Clamp(Position.Y, 16f, 2000f - 16f)
                 );
             }
 
