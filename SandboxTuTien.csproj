@@ -28,6 +28,7 @@
   <ItemGroup>
     <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.*" />
     <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.*" />
+    <PackageReference Include="MySqlConnector" Version="2.6.0" />
   </ItemGroup>
   <!-- Copy JSON data files and PNG sprites to output for runtime access -->
   <ItemGroup>

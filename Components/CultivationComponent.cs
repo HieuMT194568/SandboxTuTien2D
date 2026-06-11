@@ -886,5 +886,69 @@ namespace SandboxTuTien.Components
 
             return System.Text.Json.JsonSerializer.Serialize(data);
         }
+
+        /// <summary>
+        /// Khôi phục trạng thái tu vi từ hệ thống lưu trữ MySQL (Save/Load).
+        /// </summary>
+        public void LoadState(int level, float exp, float hp, float maxHp, float sp, float maxSp, int ringsCount, bool hasBatChuMau, string realmStr, string skill1Name, string skill2Name)
+        {
+            CurrentLevel = level;
+            CurrentExp = exp;
+            HP = hp;
+            MaxHP = maxHp;
+            SoulPower = sp;
+            MaxSoulPower = maxSp;
+            SoulRingsCount = ringsCount;
+            HasBatChuMau = hasBatChuMau;
+            BodyLimit = CalculateBodyLimit(SoulRingsCount);
+
+            if (Enum.TryParse<CultivationRealm>(realmStr, out var realm))
+            {
+                CurrentRealm = realm;
+            }
+            else
+            {
+                CurrentRealm = GetRealmForLevel(CurrentLevel);
+            }
+
+            // Phục hồi các kỹ năng đã học dựa vào tên kỹ năng
+            if (!string.IsNullOrEmpty(skill1Name))
+            {
+                if (skill1Name.Contains("Lam Ngan"))
+                    Skill1 = new SoulSkill(skill1Name, Core.Combat.Element.Wood, 1, 20f, 60f);
+                else if (skill1Name.Contains("Phuong Hoang"))
+                    Skill1 = new SoulSkill(skill1Name, Core.Combat.Element.Fire, 1, 25f, 100f);
+                else if (skill1Name.Contains("Bang"))
+                    Skill1 = new SoulSkill(skill1Name, Core.Combat.Element.Ice, 1, 30f, 80f);
+                else
+                    Skill1 = new SoulSkill(skill1Name, Core.Combat.Element.None, 1, 15f, 50f);
+            }
+            else
+            {
+                Skill1 = null;
+            }
+
+            if (!string.IsNullOrEmpty(skill2Name))
+            {
+                if (skill2Name.Contains("Lam Ngan"))
+                    Skill2 = new SoulSkill(skill2Name, Core.Combat.Element.Wood, 2, 40f, 150f);
+                else if (skill2Name.Contains("Phuong Hoang"))
+                    Skill2 = new SoulSkill(skill2Name, Core.Combat.Element.Fire, 2, 50f, 200f);
+                else if (skill2Name.Contains("Bang"))
+                    Skill2 = new SoulSkill(skill2Name, Core.Combat.Element.Ice, 2, 45f, 160f);
+                else
+                    Skill2 = new SoulSkill(skill2Name, Core.Combat.Element.None, 2, 35f, 120f);
+            }
+            else
+            {
+                Skill2 = null;
+            }
+
+            // Đưa trạng thái về Idle nếu không bị chết
+            if (HP > 0 && CurrentState == CultivationState.Dead)
+            {
+                CurrentState = CultivationState.Idle;
+            }
+        }
     }
 }

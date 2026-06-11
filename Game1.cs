@@ -74,6 +74,7 @@ public class Game1 : Game
     // HỆ THỐNG CỐT LÕI
     // ========================================================================
     private EventManager _eventManager = null!;
+    private MySqlDbManager _dbManager = null!;
     private GameTimeManager _gameTimeManager = null!;
     private DataLoader _dataLoader = null!;
     private CultivationSystem _cultivationSystem = null!;
@@ -141,6 +142,11 @@ public class Game1 : Game
         // 3. Khởi tạo DataLoader
         string contentPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Content");
         _dataLoader = new DataLoader(contentPath);
+
+        // 3.5. Khởi tạo MySQL Database Manager
+        _dbManager = new MySqlDbManager();
+        _dbManager.InitializeDatabase();
+
         LoadGameData();
 
         // 4. Khởi tạo Hệ thống Tu luyện
@@ -758,6 +764,48 @@ public class Game1 : Game
         if (IsKeyJustPressed(keys, Keys.R))
         {
             TryAbsorbNearestSoulRing();
+        }
+
+        // --- Bấm phím [F5] để Lưu game vào MySQL ---
+        if (IsKeyJustPressed(keys, Keys.F5))
+        {
+            if (_dbManager.IsConnected)
+            {
+                bool saved = _dbManager.SavePlayerState(_player);
+                if (saved)
+                {
+                    _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Game Saved to MySQL!", Color.Lime, 2.0f, 1.1f));
+                }
+                else
+                {
+                    _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Save Failed!", Color.Red));
+                }
+            }
+            else
+            {
+                _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "MySQL Offline - Cannot Save!", Color.OrangeRed));
+            }
+        }
+
+        // --- Bấm phím [F9] để Tải game từ MySQL ---
+        if (IsKeyJustPressed(keys, Keys.F9))
+        {
+            if (_dbManager.IsConnected)
+            {
+                bool loaded = _dbManager.LoadPlayerState(_player, _dataLoader);
+                if (loaded)
+                {
+                    _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Game Loaded from MySQL!", Color.Cyan, 2.0f, 1.1f));
+                }
+                else
+                {
+                    _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Load Failed!", Color.Red));
+                }
+            }
+            else
+            {
+                _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "MySQL Offline - Cannot Load!", Color.OrangeRed));
+            }
         }
 
         // --- Bấm phím [Q] để kích hoạt Hồn kỹ 1 ---
@@ -1437,7 +1485,7 @@ public class Game1 : Game
         DrawRect(20, guideY, 760, 50, new Color(55, 60, 85), true);
         DrawRect(21, guideY + 1, 758, 1, new Color(90, 100, 135, 150)); // top inner highlight
         _spriteBatch.DrawString(_font, "[WASD]: Move | [Left Click]: Normal Fire | [Right Click]: Spawn Monster | [T]: Place Turret", new Vector2(35, guideY + 5), Color.Silver, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
-        _spriteBatch.DrawString(_font, "[I]: Inventory | [E]: Switch Weapon | [1-5]: Quick Eat | [R]: Absorb Ring | [Q/W]: Cast Skills | [F]: Reload | [Y]: Cycle Turret", new Vector2(35, guideY + 26), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, "[I]: Inventory | [E]: Switch Weapon | [1-5]: Quick Eat | [R]: Absorb Ring | [Q/W]: Cast Skills | [F]: Reload | [Y]: Cycle Turret | [F5]: Save DB | [F9]: Load DB", new Vector2(35, guideY + 26), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
     }
 
     private void DrawInventoryUI()
@@ -1566,8 +1614,30 @@ public class Game1 : Game
 
     private void LoadGameData()
     {
-        _hiddenWeapons = _dataLoader.LoadHiddenWeapons();
-        _consumables = _dataLoader.LoadConsumables();
+        // Tải trước dữ liệu mẫu từ tệp JSON tĩnh để phòng hờ trường hợp MySQL offline
+        var localWeapons = _dataLoader.LoadHiddenWeapons();
+        var localConsumables = _dataLoader.LoadConsumables();
+
+        if (_dbManager != null && _dbManager.IsConnected)
+        {
+            // Thực hiện di cư (Migrate) dữ liệu tĩnh từ JSON vào MySQL nếu các bảng trong MySQL trống
+            _dbManager.MigrateJsonToMySql(localConsumables, localWeapons);
+
+            // Nạp dữ liệu trực tiếp từ MySQL làm nguồn chính thức (Source of truth)
+            _hiddenWeapons = _dbManager.LoadHiddenWeaponsFromDb();
+            _consumables = _dbManager.LoadConsumablesFromDb();
+
+            // Nếu nạp từ MySQL bị trống (lỗi hiếm gặp), sử dụng dữ liệu JSON tĩnh làm dự phòng
+            if (_hiddenWeapons == null || _hiddenWeapons.Count == 0) _hiddenWeapons = localWeapons;
+            if (_consumables == null || _consumables.Count == 0) _consumables = localConsumables;
+        }
+        else
+        {
+            // Dự phòng: Nạp trực tiếp từ JSON khi MySQL offline
+            _hiddenWeapons = localWeapons;
+            _consumables = localConsumables;
+            Console.WriteLine("[Hệ Thống] Đã nạp dữ liệu từ file JSON tĩnh (Offline Mode).");
+        }
     }
 
     private void GiveInitialInventoryItems()
@@ -1610,6 +1680,11 @@ public class Game1 : Game
         {
             Console.WriteLine($"[EVENT] ⬆ TĂNG CẤP: {e.PlayerName} Cấp {e.OldLevel} → Cấp {e.NewLevel}");
             _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 50), "LEVEL UP!", Color.Yellow, 2.0f, 1.2f));
+            if (_dbManager.IsConnected)
+            {
+                _dbManager.SavePlayerState(_player);
+                _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 70), "Auto-Saved!", Color.Lime * 0.7f, 1.5f, 0.9f));
+            }
         });
 
         _eventManager.Subscribe<OnBottleneckReachedEvent>(e =>
@@ -1622,6 +1697,11 @@ public class Game1 : Game
         {
             Console.WriteLine($"[EVENT] ★ ĐỘT PHÁ THÀNH CÔNG: {e.PlayerName} → {e.NewRealm} Cấp {e.NewLevel} (Hồn Hoàn #{e.SoulRingNumber})");
             _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 60), $"SUCCESS #{e.SoulRingNumber}!", Color.Gold, 3.0f, 1.3f));
+            if (_dbManager.IsConnected)
+            {
+                _dbManager.SavePlayerState(_player);
+                _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 80), "Auto-Saved!", Color.Lime * 0.7f, 1.5f, 0.9f));
+            }
         });
 
         _eventManager.Subscribe<OnBreakthroughFailedEvent>(e =>
