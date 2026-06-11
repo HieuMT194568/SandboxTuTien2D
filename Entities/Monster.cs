@@ -9,27 +9,100 @@ namespace SandboxTuTien.Entities
     /// </summary>
     public class Monster
     {
-        public string Name { get; set; }
-        public int Age { get; set; } // Tuổi Hồn Thú (năm tu vi)
+        public string BaseName { get; set; }
+        
+        public string Name => GetRankedName();
+        
+        public int Age { get; set; } // Số năm tu vi
         public float HP { get; set; }
         public float MaxHP { get; set; }
+        public float BaseMaxHP { get; set; } // HP gốc khi tạo quái
         public Vector2 Position { get; set; }
         public Element Element { get; set; }
         public bool Active { get; set; }
-        public float Radius { get; set; } = 20f; // Bán kính va chạm
+        public float Radius { get; set; } // Bán kính va chạm (sẽ tự động tăng theo tuổi)
+
+        private readonly Random _random = new();
 
         /// <summary>Sự kiện kích hoạt khi Hồn Thú chết (để tạo Hồn Hoàn).</summary>
         public event Action<Monster>? OnKilled;
 
         public Monster(string name, int age, float maxHp, Vector2 position, Element element)
         {
-            Name = name;
+            BaseName = name;
             Age = age;
-            MaxHP = maxHp;
-            HP = maxHp;
+            BaseMaxHP = maxHp;
+            MaxHP = maxHp * (1f + age / 1500f); // Tỷ lệ HP tăng theo tuổi ban đầu
+            HP = MaxHP;
             Position = position;
             Element = element;
             Active = true;
+            UpdateRadius();
+        }
+
+        /// <summary>
+        /// Cập nhật bán kính va chạm theo hàm logarit của tuổi thọ.
+        /// </summary>
+        private void UpdateRadius()
+        {
+            Radius = 16f + (float)Math.Log(Math.Max(1, Age), 10) * 4.5f;
+        }
+
+        /// <summary>
+        /// Tạo tên có tiền tố cảnh giới theo tuổi thọ (Đấu La Đại Lục).
+        /// </summary>
+        private string GetRankedName()
+        {
+            string prefix = Age switch
+            {
+                < 100 => "Thap Nien",
+                < 1000 => "Bach Nien",
+                < 10000 => "Thien Nien",
+                _ => "Van Nien"
+            };
+            return $"{prefix} {BaseName}";
+        }
+
+        /// <summary>
+        /// Cập nhật tiến hóa và tăng tuổi thọ của Hồn thú theo thời gian.
+        /// </summary>
+        public void UpdateEvolution(float deltaTime, float timeScale)
+        {
+            if (!Active) return;
+
+            int oldAge = Age;
+            
+            // Tốc độ tăng trưởng tuổi: khoảng 8 đến 15 năm mỗi giây thực tế
+            float ageIncrease = (float)(_random.NextDouble() * 7.0 + 8.0) * deltaTime;
+            Age = (int)(Age + ageIncrease);
+
+            // Cập nhật lại HP và kích thước nếu tuổi thay đổi
+            if (Age != oldAge)
+            {
+                float oldMaxHP = MaxHP;
+                MaxHP = BaseMaxHP * (1f + Age / 1500f);
+
+                // Hồi phục HP theo tỷ lệ
+                if (oldMaxHP > 0)
+                {
+                    HP = (HP / oldMaxHP) * MaxHP;
+                }
+                else
+                {
+                    HP = MaxHP;
+                }
+
+                UpdateRadius();
+
+                // Kiểm tra xem quái vật có đột phá tiền tố cảnh giới không
+                string oldPrefix = oldAge switch { < 100 => "Thap Nien", < 1000 => "Bach Nien", < 10000 => "Thien Nien", _ => "Van Nien" };
+                string newPrefix = Age switch { < 100 => "Thap Nien", < 1000 => "Bach Nien", < 10000 => "Thien Nien", _ => "Van Nien" };
+                
+                if (oldPrefix != newPrefix)
+                {
+                    Console.WriteLine($"[Tiến Hóa] ✦ Hồn Thú {BaseName} đã tiến hóa đột phá thành công: {oldPrefix} → {newPrefix} ({Age} năm)!");
+                }
+            }
         }
 
         /// <summary>

@@ -1,5 +1,6 @@
 using System;
 using Microsoft.Xna.Framework;
+using SandboxTuTien.Core.Combat;
 
 namespace SandboxTuTien.Entities
 {
@@ -10,16 +11,18 @@ namespace SandboxTuTien.Entities
     {
         public Vector2 Position { get; set; }
         public int Age { get; set; } // Số năm tu vi
+        public Element Element { get; set; } // Hệ thuộc tính di truyền từ Hồn thú
         public bool Active { get; set; }
         public float Radius { get; set; } = 40f; // Khoảng cách hấp thu
         
         /// <summary>Biến đếm thời gian phục vụ hiệu ứng nhấp nháy/xoay.</summary>
         public float PulseTimer { get; set; }
 
-        public SoulRingEntity(Vector2 position, int age)
+        public SoulRingEntity(Vector2 position, int age, Element element)
         {
             Position = position;
             Age = age;
+            Element = element;
             Active = true;
             PulseTimer = 0f;
         }

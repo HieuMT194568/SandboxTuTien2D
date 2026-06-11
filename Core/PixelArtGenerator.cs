@@ -602,5 +602,76 @@ namespace SandboxTuTien.Core
             texture.SetData(pixels);
             return texture;
         }
+
+        /// <summary>
+        /// Vẽ Bệ Phóng Ám Khí Tự Động (Turret) (24x24):
+        /// Thiết kế cơ quan cơ học bằng kim loại đen nhám, chân giá đỡ gỗ chéo 3 chân,
+        /// khớp xoay bằng đồng vàng và nòng nỏ kim loại rực sáng ở đỉnh.
+        /// </summary>
+        public static Texture2D CreateTurretTexture(GraphicsDevice gd)
+        {
+            int w = 24, h = 24;
+            Color[] pixels = new Color[w * h];
+            Color trans = Color.Transparent;
+
+            Color ironBlack = new Color(50, 52, 60);      // Sắt đen thân nòng
+            Color ironLight = new Color(110, 115, 125);    // Thép nòng sáng viền
+            Color brassGold = new Color(215, 160, 25);     // Khớp xoay đồng thau
+            Color woodLegs = new Color(130, 80, 40);       // Chân gỗ giá đỡ
+            Color woodShadow = new Color(85, 45, 15);      // Đổ bóng chân gỗ
+            Color glowCore = new Color(255, 120, 20);      // Lõi năng lượng xẹt lửa
+
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    Color c = trans;
+
+                    // 1. Ba Chân đỡ gỗ ở đáy (y từ 15 -> 23)
+                    // Chân trái (đường chéo trái)
+                    if (y >= 15 && x == 12 - (y - 15) && x >= 3)
+                    {
+                        c = woodLegs;
+                        if (y >= 19) c = woodShadow;
+                    }
+                    // Chân phải (đường chéo phải)
+                    else if (y >= 15 && x == 11 + (y - 15) && x <= 20)
+                    {
+                        c = woodLegs;
+                        if (y >= 19) c = woodShadow;
+                    }
+                    // Chân giữa (dọc)
+                    else if (y >= 15 && y <= 21 && x == 11)
+                    {
+                        c = woodShadow;
+                    }
+
+                    // 2. Khớp xoay bằng đồng (y từ 11 -> 14, x ở giữa)
+                    if (y >= 11 && y <= 14 && x >= 9 && x <= 14)
+                    {
+                        c = brassGold;
+                        if (x == 9 || y == 14) c = new Color(145, 105, 10); // Đổ bóng khớp xoay
+                    }
+
+                    // 3. Thân nòng nỏ thép phóng đạn phía trên (y từ 3 -> 10, x từ 7 -> 16)
+                    if (y >= 3 && y <= 10 && x >= 8 && x <= 15)
+                    {
+                        c = ironBlack;
+                        // Viền thép sáng
+                        if (x == 8 || y == 3 || x == 15) c = ironLight;
+                        // Lõi cơ quan năng lượng xẹt lửa đỏ cam
+                        if (y >= 5 && y <= 8 && x >= 11 && x <= 12) c = glowCore;
+                    }
+
+                    pixels[y * w + x] = c;
+                }
+            }
+
+            Texture2D texture = new Texture2D(gd, w, h);
+            texture.SetData(pixels);
+            return texture;
+        }
     }
 }
+
+

@@ -66,6 +66,7 @@ public class Game1 : Game
     private Texture2D _boltTexture = null!;
     private Texture2D _sausageTexture = null!;
     private Texture2D _ringTexture = null!;
+    private Texture2D _turretTexture = null!;
 
     // ========================================================================
     // HỆ THỐNG CỐT LÕI
@@ -83,6 +84,7 @@ public class Game1 : Game
     private readonly List<Monster> _monsters = new();
     private readonly List<SoulRingEntity> _soulRings = new();
     private readonly List<FloatingText> _floatingTexts = new();
+    private readonly List<AutoLauncher> _launchers = new();
 
     private List<HiddenWeaponData> _hiddenWeapons = null!;
     private List<ConsumableData> _consumables = null!;
@@ -93,6 +95,7 @@ public class Game1 : Game
     private bool _isInventoryOpen = false;
     private KeyboardState _previousKeyState;
     private MouseState _previousMouseState;
+    private readonly Random _random = new();
 
     public Game1()
     {
@@ -165,6 +168,7 @@ public class Game1 : Game
         _boltTexture = PixelArtGenerator.CreateProjectileBoltTexture(GraphicsDevice);
         _sausageTexture = PixelArtGenerator.CreateSausageTexture(GraphicsDevice);
         _ringTexture = PixelArtGenerator.CreateRingTexture(GraphicsDevice, 32);
+        _turretTexture = PixelArtGenerator.CreateTurretTexture(GraphicsDevice);
     }
 
     protected override void Update(GameTime gameTime)
@@ -180,13 +184,28 @@ public class Game1 : Game
         _cultivationSystem.Update(gameTime);
         _projectilePool.Update(deltaTime);
 
+        // Cập nhật chuyển động người chơi
         UpdatePlayerMovement(currentKeyState, deltaTime);
 
+        // 1. Cập nhật Hồn Thú tự động tiến hóa theo tuổi thọ (1s thực = 24 phút game)
+        for (int i = _monsters.Count - 1; i >= 0; i--)
+        {
+            _monsters[i].UpdateEvolution(deltaTime, 1440f);
+        }
+
+        // 2. Cập nhật hoạt động của Bệ Phóng Ám Khí tự động
+        foreach (var launcher in _launchers)
+        {
+            launcher.Update(deltaTime, _monsters, _projectilePool);
+        }
+
+        // Cập nhật Hồn Hoàn rơi
         foreach (var ring in _soulRings)
         {
             ring.Update(gameTime);
         }
 
+        // Cập nhật chữ nổi
         for (int i = _floatingTexts.Count - 1; i >= 0; i--)
         {
             _floatingTexts[i].Update(deltaTime);
@@ -223,7 +242,21 @@ public class Game1 : Game
             }
         }
 
-        // 2. Vẽ Hồn Thú
+        // 2. Vẽ các Bệ Phóng Ám Khí tự động xuống đất
+        foreach (var launcher in _launchers)
+        {
+            if (launcher.Active)
+            {
+                _spriteBatch.Draw(_turretTexture, launcher.Position, null, Color.White, 0f, 
+                                  new Vector2(12, 12), 1.5f, SpriteEffects.None, 0f);
+                
+                // Vẽ vòng tròn tầm bắn quét nhỏ mờ bao quanh bệ phóng
+                _spriteBatch.Draw(_ringTexture, launcher.Position, null, Color.White * 0.15f, 
+                                  0f, new Vector2(32, 32), launcher.Range / 32f, SpriteEffects.None, 0f);
+            }
+        }
+
+        // 3. Vẽ Hồn Thú (Kích thước co dãn theo bán kính va chạm)
         foreach (var monster in _monsters)
         {
             if (monster.Active)
@@ -236,39 +269,47 @@ public class Game1 : Game
                     _ => _monsterPlantTexture
                 };
                 
-                _spriteBatch.Draw(tex, monster.Position, null, Color.White, 0f, 
-                                  new Vector2(16, 16), 1.5f, SpriteEffects.None, 0f);
+                // Quy mô vẽ co dãn dựa trên bán kính va chạm Radius (gốc là 16px -> nhân scale)
+                float scale = (monster.Radius / 16f) * 1.2f;
 
-                // Vẽ thanh máu quái
-                int hpBarW = 32;
+                _spriteBatch.Draw(tex, monster.Position, null, Color.White, 0f, 
+                                  new Vector2(16, 16), scale, SpriteEffects.None, 0f);
+
+                // Vẽ thanh HP quái
+                int hpBarW = (int)(monster.Radius * 1.8f);
                 int hpBarH = 4;
-                int hpX = (int)monster.Position.X - 16;
-                int hpY = (int)monster.Position.Y - 24;
+                int hpX = (int)monster.Position.X - hpBarW / 2;
+                int hpY = (int)monster.Position.Y - (int)(monster.Radius + 6);
                 float hpRatio = monster.HP / monster.MaxHP;
 
                 DrawRect(hpX, hpY, hpBarW, hpBarH, Color.Black);
                 DrawRect(hpX, hpY, (int)(hpBarW * hpRatio), hpBarH, Color.Red);
                 
-                string ageLabel = $"{monster.Age}N";
-                Vector2 labelSize = _font.MeasureString(ageLabel) * 0.7f;
-                _spriteBatch.DrawString(_font, ageLabel, new Vector2(monster.Position.X - labelSize.X / 2f, monster.Position.Y - 38), 
+                // Tên Hồn thú cải tiến theo tu vi tiến hóa
+                string rankName = monster.Name;
+                Vector2 labelSize = _font.MeasureString(rankName) * 0.7f;
+                _spriteBatch.DrawString(_font, rankName, new Vector2(monster.Position.X - labelSize.X / 2f, hpY - 14), 
                                         Color.Yellow, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
             }
         }
 
-        // 3. Vẽ đạn ám khí
+        // 4. Vẽ đạn ám khí
         foreach (var proj in _projectilePool.Projectiles)
         {
             if (proj.Active)
             {
                 Texture2D tex = proj.Element == Element.Fire ? _boltTexture : _needleTexture;
+                
+                // Đạn hệ thường của cơ quan vẽ màu trắng/bạc
+                Color bulletColor = proj.Element == Element.None ? Color.LightGray : Color.White;
                 float rotation = (float)Math.Atan2(proj.Velocity.Y, proj.Velocity.X);
-                _spriteBatch.Draw(tex, proj.Position, null, Color.White, rotation, 
+                
+                _spriteBatch.Draw(tex, proj.Position, null, bulletColor, rotation, 
                                   new Vector2(4, 4), 1.5f, SpriteEffects.None, 0f);
             }
         }
 
-        // 4. Vẽ Player
+        // 5. Vẽ Player
         if (_player.Cultivation.CurrentState != CultivationState.Dead)
         {
             _spriteBatch.Draw(_playerTexture, new Vector2(_player.PositionX, _player.PositionY), null, Color.White, 0f, 
@@ -280,7 +321,7 @@ public class Game1 : Game
                               new Vector2(16, 16), 1.5f, SpriteEffects.None, 0f);
         }
 
-        // 5. Vẽ chữ nổi
+        // 6. Vẽ chữ nổi
         foreach (var ft in _floatingTexts)
         {
             float alpha = 1f - (ft.Elapsed / ft.Lifetime);
@@ -288,10 +329,10 @@ public class Game1 : Game
                                     0f, Vector2.Zero, ft.Scale, SpriteEffects.None, 0f);
         }
 
-        // 6. Vẽ HUD
+        // 7. Vẽ HUD
         DrawHUD();
 
-        // 7. Vẽ túi đồ
+        // 8. Vẽ túi đồ
         if (_isInventoryOpen)
         {
             DrawInventoryUI();
@@ -327,7 +368,7 @@ public class Game1 : Game
             _player.PositionY += dir.Y * speed * deltaTime;
 
             _player.PositionX = Math.Clamp(_player.PositionX, 16f, 800f - 16f);
-            _player.PositionY = Math.Clamp(_player.PositionY, 175f, 600f - 16f); // Tránh đè lên HUD trên
+            _player.PositionY = Math.Clamp(_player.PositionY, 175f, 600f - 16f); // Tránh đè HUD
         }
     }
 
@@ -364,7 +405,25 @@ public class Game1 : Game
             TryAbsorbNearestSoulRing();
         }
 
-        // Sử dụng phím tắt 1->5 để ăn xúc xích hoặc trang bị ám khí
+        // --- Bấm phím [Q] để kích hoạt Hồn kỹ 1 ---
+        if (IsKeyJustPressed(keys, Keys.Q))
+        {
+            TriggerActiveSkill(1, mouse.Position.ToVector2());
+        }
+
+        // --- Bấm phím [W] để kích hoạt Hồn kỹ 2 ---
+        if (IsKeyJustPressed(keys, Keys.W))
+        {
+            TriggerActiveSkill(2, mouse.Position.ToVector2());
+        }
+
+        // --- Bấm phím [T] để đặt bệ phóng ám khí tự động (Auto-Turret) ---
+        if (IsKeyJustPressed(keys, Keys.T))
+        {
+            PlaceAutoLauncher();
+        }
+
+        // Sử dụng phím tắt 1->5
         for (int i = 0; i < 5; i++)
         {
             Keys key = Keys.D1 + i;
@@ -384,10 +443,9 @@ public class Game1 : Game
             }
         }
 
-        // Click chuột trái bắn đạn
+        // Click chuột trái bắn đạn thường
         if (mouse.LeftButton == ButtonState.Pressed && _previousMouseState.LeftButton == ButtonState.Released)
         {
-            // Không bắn nếu đang click vào khu vực túi đồ khi túi đồ đang mở
             bool clickInInventory = _isInventoryOpen && mouse.X >= 510 && mouse.Y <= 520;
             
             if (!clickInInventory &&
@@ -406,8 +464,146 @@ public class Game1 : Game
     }
 
     // ====================================================================
-    // COMBAT & SYSTEM INTEGRATIONS
+    // ADVANCED COMBAT & TURRETS IMPLEMENTATIONS
     // ====================================================================
+
+    private void TriggerActiveSkill(int skillNumber, Vector2 targetPos)
+    {
+        var cult = _player.Cultivation;
+        if (cult.CurrentState == CultivationState.Dead) return;
+
+        SoulSkill? skill = skillNumber == 1 ? cult.Skill1 : cult.Skill2;
+
+        if (skill == null)
+        {
+            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 35), $"Hon ky {skillNumber} chua mo khoa!", Color.OrangeRed));
+            return;
+        }
+
+        // Kiểm tra Hồn Lực SP
+        if (cult.SoulPower < skill.SPCost)
+        {
+            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 35), "Khong du Hon luc (SP)!", Color.Red));
+            return;
+        }
+
+        // Tiêu hao SP và kích hoạt bắn đạn hồn kỹ đặc biệt
+        cult.ConsumeSoulPower(skill.SPCost);
+        CastSoulSkillProjectiles(skill, targetPos);
+
+        _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 55), $"Kich Hoat: {skill.Name}!", Color.YellowGreen, 1.5f, 1.2f));
+    }
+
+    private void CastSoulSkillProjectiles(SoulSkill skill, Vector2 targetPos)
+    {
+        Vector2 playerCenter = new Vector2(_player.PositionX, _player.PositionY);
+        Vector2 dir = targetPos - playerCenter;
+        if (dir == Vector2.Zero) dir = new Vector2(1, 0);
+        else dir.Normalize();
+
+        float baseAngle = (float)Math.Atan2(dir.Y, dir.X);
+
+        if (skill.Name == "Lam Ngan Quan Quanh")
+        {
+            // Bắn 3 tia độc hệ Wood tốc độ cao sát thương 60
+            float spread = 0.15f;
+            float startAngle = baseAngle - spread;
+            for (int i = 0; i < 3; i++)
+            {
+                float angle = startAngle + spread * i;
+                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
+                _projectilePool.Spawn(playerCenter, bulletDir, skill.Damage, 350f, 500f, Element.Wood);
+            }
+        }
+        else if (skill.Name == "Phuong Hoang Hoa Tuyen")
+        {
+            // Bắn chùm lửa liên tiếp 8 phát (Fire) sát thương 100
+            for (int i = 0; i < 8; i++)
+            {
+                float angle = baseAngle + (float)(_random.NextDouble() - 0.5) * 0.08f;
+                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
+                Vector2 spawnOffset = bulletDir * (i * 8f);
+                _projectilePool.Spawn(playerCenter + spawnOffset, bulletDir, skill.Damage, 400f, 450f, Element.Fire);
+            }
+        }
+        else if (skill.Name == "Bang Tam Ket Gioi")
+        {
+            // Tạo khiên băng bắn ra 12 tia xung quanh 360 độ (Ice) sát thương 80
+            float step = (float)(Math.PI * 2 / 12);
+            for (int i = 0; i < 12; i++)
+            {
+                float angle = step * i;
+                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
+                _projectilePool.Spawn(playerCenter, bulletDir, skill.Damage, 250f, 300f, Element.Ice);
+            }
+        }
+        else if (skill.Name == "Lam Ngan Tu Lung")
+        {
+            // Mộc Hồn hoàn 2: Cùm trói diện rộng (5 tia bắn cực mạnh, sát thương 150)
+            float spread = 0.4f;
+            float step = spread / 4f;
+            float startAngle = baseAngle - spread / 2f;
+            for (int i = 0; i < 5; i++)
+            {
+                float angle = startAngle + step * i;
+                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
+                _projectilePool.Spawn(playerCenter, bulletDir, skill.Damage, 380f, 480f, Element.Wood);
+            }
+        }
+        else if (skill.Name == "Phuong Hoang Huyen Oa")
+        {
+            // Hỏa Hồn hoàn 2: Vòng xoáy lửa địa ngục (5 cầu lửa sát thương 200)
+            float spread = 0.5f;
+            float step = spread / 4f;
+            float startAngle = baseAngle - spread / 2f;
+            for (int i = 0; i < 5; i++)
+            {
+                float angle = startAngle + step * i;
+                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
+                _projectilePool.Spawn(playerCenter, bulletDir, skill.Damage, 300f, 360f, Element.Fire);
+            }
+        }
+        else if (skill.Name == "Huyen Bang Xung Kich")
+        {
+            // Băng Hồn hoàn 2: Sóng xung kích huyền băng (10 tia quạt rộng sát thương 160)
+            float spread = 0.7f;
+            float step = spread / 9f;
+            float startAngle = baseAngle - spread / 2f;
+            for (int i = 0; i < 10; i++)
+            {
+                float angle = startAngle + step * i;
+                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
+                _projectilePool.Spawn(playerCenter, bulletDir, skill.Damage, 320f, 420f, Element.Ice);
+            }
+        }
+        else
+        {
+            // Kỹ năng mặc định
+            _projectilePool.Spawn(playerCenter, dir, skill.Damage, 300f, 350f, skill.Element);
+        }
+
+        Console.WriteLine($"[Hồn Kỹ] ⚡ Đường Tam thi triển: {skill.Name} (Sát thương: {skill.Damage}, Hồn lực: {skill.SPCost})");
+    }
+
+    private void PlaceAutoLauncher()
+    {
+        if (_player.Cultivation.CurrentState == CultivationState.Dead) return;
+
+        // Giới hạn tối đa 3 bệ phóng ám khí
+        if (_launchers.Count >= 3)
+        {
+            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Dat Toi Da 3 Be Phong!", Color.OrangeRed));
+            Console.WriteLine("[Cơ Quan] Cảnh báo: Đã đạt giới hạn tối đa 3 bệ phóng ám khí!");
+            return;
+        }
+
+        Vector2 playerPos = new Vector2(_player.PositionX, _player.PositionY);
+        var turret = new AutoLauncher(playerPos);
+        _launchers.Add(turret);
+
+        _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 15), "+ Auto Turret", Color.Gold));
+        Console.WriteLine($"[Cơ Quan] ⚙ Đã đặt Bệ Phóng Ám Khí tự động tại vị trí {playerPos.X:F0},{playerPos.Y:F0} (Tổng số: {_launchers.Count}/3).");
+    }
 
     private void FireActiveWeapon(Vector2 targetPos)
     {
@@ -467,8 +663,7 @@ public class Game1 : Game
 
     private void SpawnRandomMonster(Vector2 spawnPos)
     {
-        Random rand = new Random();
-        int monsterType = rand.Next(3);
+        int monsterType = _random.Next(3);
 
         string name;
         int age;
@@ -479,21 +674,21 @@ public class Game1 : Game
         {
             case 0:
                 name = "Lam Ngan Thao";
-                age = 400;
-                hp = 200f;
+                age = 90; // Tạo quái nhỏ để test tiến hóa sinh trưởng lên Bách Niên
+                hp = 180f;
                 elem = Element.Wood;
                 break;
             case 1:
                 name = "Hoa Ke";
-                age = 1500;
-                hp = 500f;
+                age = 800; // Sắp đạt Thiên Niên
+                hp = 400f;
                 elem = Element.Fire;
                 break;
             case 2:
             default:
                 name = "Bang Tam";
-                age = 9999;
-                hp = 1200f;
+                age = 8000; // Sắp đạt Vạn Niên
+                hp = 900f;
                 elem = Element.Ice;
                 break;
         }
@@ -502,16 +697,17 @@ public class Game1 : Game
         
         m.OnKilled += monster =>
         {
-            var ring = new SoulRingEntity(monster.Position, monster.Age);
+            // Rơi Hồn Hoàn lưu trữ tuổi thọ và hệ thuộc tính của quái vật!
+            var ring = new SoulRingEntity(monster.Position, monster.Age, monster.Element);
             _soulRings.Add(ring);
 
-            _floatingTexts.Add(new FloatingText(monster.Position, $"Dropped Soul Ring {monster.Age}N!", Color.Yellow, 2.5f, 1.2f));
+            _floatingTexts.Add(new FloatingText(monster.Position, $"Dropped Soul Ring {monster.Age}N ({monster.Element})!", Color.Yellow, 2.5f, 1.2f));
             _monsters.Remove(monster);
         };
 
         _monsters.Add(m);
-        _floatingTexts.Add(new FloatingText(spawnPos, $"Spawn: {name} ({age}N)", Color.Tomato));
-        Console.WriteLine($"[Hệ Thống] Đã sinh Hồn Thú '{name}' {age} năm ({elem}) tại {spawnPos}");
+        _floatingTexts.Add(new FloatingText(spawnPos, $"Spawn: {m.Name} ({age}N)", Color.Tomato));
+        Console.WriteLine($"[Hệ Thống] Đã sinh Hồn Thú '{m.Name}' {age} năm ({elem}) tại {spawnPos}");
     }
 
     private void HandleProjectileCollisions()
@@ -559,7 +755,8 @@ public class Game1 : Game
             ring.Active = false;
             _soulRings.Remove(ring);
 
-            cult.StartAbsorbingSoulRing(ring.Age);
+            // Truyền cả TUỔI và HỆ của hồn thú để đột phá hồn kỹ tương ứng
+            cult.StartAbsorbingSoulRing(ring.Age, ring.Element);
         }
         else
         {
@@ -590,7 +787,7 @@ public class Game1 : Game
     }
 
     // ====================================================================
-    // RENDER METADATA MAPPING (NO ACCENTS IN FONT RENDERING)
+    // METADATA HUD
     // ====================================================================
 
     private string GetHUDItemName(string itemId)
@@ -624,7 +821,7 @@ public class Game1 : Game
     }
 
     // ====================================================================
-    // HUD DRAWING
+    // HUD & INVENTORY
     // ====================================================================
 
     private void DrawHUD()
@@ -637,10 +834,10 @@ public class Game1 : Game
         int spacing = 18;
 
         // Vẽ Khung đen nền HUD
-        DrawRect(startX - 10, startY - 5, 305, 140, new Color(20, 22, 38, 220));
-        DrawRect(startX - 10, startY - 5, 305, 140, new Color(65, 75, 110), true);
+        DrawRect(startX - 10, startY - 5, 305, 155, new Color(20, 22, 38, 220));
+        DrawRect(startX - 10, startY - 5, 305, 155, new Color(65, 75, 110), true);
 
-        // Tên và cảnh giới (đã loại bỏ dấu tiếng Việt để vẽ font an toàn)
+        // Tên và cảnh giới
         string realmHUD = GetRealmHUDName(cult.CurrentRealm);
         _spriteBatch.DrawString(_font, $"Duong Tam | {realmHUD} (Cap {cult.CurrentLevel})", 
                                 new Vector2(startX, startY), Color.Gold);
@@ -670,10 +867,10 @@ public class Game1 : Game
         DrawRect(startX, spY, barW, barH, new Color(30, 130, 70), true);
         _spriteBatch.DrawString(_font, $"SP: {cult.SoulPower:F0}/{cult.MaxSoulPower:F0}", new Vector2(startX + barW + 10, spY - 2), Color.MediumSpringGreen, 0f, Vector2.Zero, 0.82f, SpriteEffects.None, 0f);
 
-        // Ám khí hiện tại
+        // Ám khí hiện tại + Danh sách bệ phóng
         int wY = spY + spacing;
         string activeWeaponName = GetHUDItemName(_player.Inventory.EquippedWeapon?.ItemId ?? string.Empty);
-        _spriteBatch.DrawString(_font, $"Am Khi: {activeWeaponName}", new Vector2(startX, wY + 5), Color.Khaki, 0f, Vector2.Zero, 0.9f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, $"Am Khi: {activeWeaponName} | Turrets: {_launchers.Count}/3", new Vector2(startX, wY + 5), Color.Khaki, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
 
         // Vẽ 9 ô Hồn Hoàn Hấp Thu dưới góc trái HUD
         int ringsStartY = wY + spacing + 12;
@@ -704,7 +901,23 @@ public class Game1 : Game
             DrawRect(rx, ringsStartY, ringSize, ringSize, new Color(75, 85, 120), true);
         }
 
-        // Cảnh báo khi đang hấp thu
+        // --- CỬA SỔ HIỂN THỊ HỒN KỸ CHỦ ĐỘNG (Q / W) ---
+        int skillX = 335;
+        int skillY = 15;
+        DrawRect(skillX, skillY, 165, 140, new Color(20, 22, 38, 220));
+        DrawRect(skillX, skillY, 165, 140, new Color(65, 75, 110), true);
+        _spriteBatch.DrawString(_font, "HON KY CHU DONG", new Vector2(skillX + 10, skillY + 8), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+        DrawRect(skillX + 8, skillY + 24, 149, 1, new Color(65, 75, 110));
+
+        string qLabel = cult.Skill1 != null ? $"Q: {cult.Skill1.Name}\n   ({cult.Skill1.SPCost} SP)" : "Q: [Chua hoc]";
+        Color qColor = cult.Skill1 != null ? Color.MediumSpringGreen : Color.DarkGray;
+        _spriteBatch.DrawString(_font, qLabel, new Vector2(skillX + 10, skillY + 32), qColor, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
+
+        string wLabel = cult.Skill2 != null ? $"W: {cult.Skill2.Name}\n   ({cult.Skill2.SPCost} SP)" : "W: [Chua hoc]";
+        Color wColor = cult.Skill2 != null ? Color.Gold : Color.DarkGray;
+        _spriteBatch.DrawString(_font, wLabel, new Vector2(skillX + 10, skillY + 80), wColor, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
+
+        // Cảnh báo khi hấp thu
         if (cult.CurrentState == CultivationState.AbsorbingRing)
         {
             float pulse = (float)(Math.Sin(gameTimeForDraw * 8.0) * 0.4 + 0.6);
@@ -716,8 +929,8 @@ public class Game1 : Game
         int guideY = 540;
         DrawRect(20, guideY, 760, 50, new Color(18, 18, 30, 220));
         DrawRect(20, guideY, 760, 50, new Color(55, 60, 85), true);
-        _spriteBatch.DrawString(_font, "[WASD/Arrows]: Move | [Left Click]: Fire Weapon | [Right Click]: Spawn Monster", new Vector2(35, guideY + 5), Color.Silver, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
-        _spriteBatch.DrawString(_font, "[I]: Toggle Inventory | [E]: Switch Weapon | [1-5]: Use Quick Item | [R]: Absorb Ring", new Vector2(35, guideY + 26), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, "[WASD]: Move | [Left Click]: Normal Fire | [Right Click]: Spawn Monster | [T]: Place Turret", new Vector2(35, guideY + 5), Color.Silver, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, "[I]: Inventory | [E]: Switch Weapon | [1-5]: Quick Eat | [R]: Absorb Ring | [Q/W]: Cast Skills", new Vector2(35, guideY + 26), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
     }
 
     private void DrawInventoryUI()
@@ -735,7 +948,7 @@ public class Game1 : Game
         _spriteBatch.DrawString(_font, "TUI DO (INVENTORY)", new Vector2(startX + 38, startY + 15), Color.Gold, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0f);
         DrawRect(startX + 15, startY + 40, width - 30, 2, new Color(80, 95, 140));
 
-        // Vẽ slots vật phẩm
+        // Vẽ slots
         var items = _player.Inventory.Items;
         int slotStartX = startX + 15;
         int slotStartY = startY + 55;

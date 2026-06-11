@@ -4,6 +4,26 @@ using SandboxTuTien.Core;
 
 namespace SandboxTuTien.Components
 {
+    /// <summary>
+    /// Định nghĩa chi tiết của một Hồn Kỹ học được từ Hồn Hoàn.
+    /// </summary>
+    public class SoulSkill
+    {
+        public string Name { get; set; } = string.Empty;
+        public SandboxTuTien.Core.Combat.Element Element { get; set; }
+        public int RingNumber { get; set; } // Hồn hoàn thứ mấy (1 hoặc 2)
+        public float SPCost { get; set; }  // Hồn lực tiêu hao (mana)
+        public float Damage { get; set; }  // Sát thương cơ bản
+
+        public SoulSkill(string name, SandboxTuTien.Core.Combat.Element element, int ringNumber, float spCost, float damage)
+        {
+            Name = name;
+            Element = element;
+            RingNumber = ringNumber;
+            SPCost = spCost;
+            Damage = damage;
+        }
+    }
     // ========================================================================
     // ENUMS
     // ========================================================================
@@ -146,6 +166,12 @@ namespace SandboxTuTien.Components
         /// <summary>Buff ý chí (Willpower) — tăng tỷ lệ hấp thu thành công.</summary>
         public float WillpowerBuff { get; set; }
 
+        /// <summary>Hồn Kỹ chủ động thứ nhất (phím Q) học được từ Hồn Hoàn 1.</summary>
+        public SoulSkill? Skill1 { get; private set; }
+
+        /// <summary>Hồn Kỹ chủ động thứ hai (phím W) học được từ Hồn Hoàn 2.</summary>
+        public SoulSkill? Skill2 { get; private set; }
+
         /// <summary>Hồi HP (không vượt quá MaxHP).</summary>
         public void Heal(float amount)
         {
@@ -176,6 +202,9 @@ namespace SandboxTuTien.Components
 
         /// <summary>Tuổi Hồn Thú đang hấp thu (năm tu vi).</summary>
         private int _absorbingSoulBeastAge;
+
+        /// <summary>Hệ thuộc tính của Hồn Thú đang hấp thu.</summary>
+        private SandboxTuTien.Core.Combat.Element _absorbingSoulBeastElement;
 
         /// <summary>Thời gian đã trôi qua trong quá trình hấp thu.</summary>
         private float _absorptionElapsed;
@@ -335,7 +364,7 @@ namespace SandboxTuTien.Components
         /// Chỉ có thể gọi khi đang ở trạng thái BREAKTHROUGH_READY.
         /// </summary>
         /// <param name="soulBeastAge">Tuổi Hồn Thú (năm tu vi) — quyết định rủi ro.</param>
-        public void StartAbsorbingSoulRing(int soulBeastAge)
+        public void StartAbsorbingSoulRing(int soulBeastAge, SandboxTuTien.Core.Combat.Element element)
         {
             if (CurrentState != CultivationState.BreakthroughReady &&
                 CurrentState != CultivationState.Idle)
@@ -352,6 +381,7 @@ namespace SandboxTuTien.Components
             }
 
             _absorbingSoulBeastAge = soulBeastAge;
+            _absorbingSoulBeastElement = element;
             _absorptionElapsed = 0f;
             _currentDamageWave = 0;
             _timeBetweenWaves = ABSORPTION_DURATION / ABSORPTION_DAMAGE_WAVES;
@@ -362,7 +392,7 @@ namespace SandboxTuTien.Components
             float successRate = CalculateAbsorptionSuccessRate(soulBeastAge);
 
             Console.WriteLine($"[Hồn Hoàn] ⚡ {OwnerName} bắt đầu hấp thu Hồn Hoàn!");
-            Console.WriteLine($"           Hồn Thú: {soulBeastAge} năm tu vi");
+            Console.WriteLine($"           Hồn Thú: {soulBeastAge} năm tu vi (Hệ: {element})");
             Console.WriteLine($"           Cực hạn cơ thể: {BodyLimit:F0} năm");
             Console.WriteLine($"           Tỷ lệ thành công: {successRate:P1}");
             Console.WriteLine($"           Sẽ chịu {ABSORPTION_DAMAGE_WAVES} đợt sát thương nội tại...");
@@ -556,13 +586,38 @@ namespace SandboxTuTien.Components
 
             string ringColor = GetSoulRingColor(SoulRingsCount);
 
+            // Mở khóa Hồn Kỹ tương ứng dựa theo Hệ của Hồn thú và thứ tự Hồn hoàn
+            string skillGainedInfo = "Chưa gán";
+            if (SoulRingsCount == 1)
+            {
+                Skill1 = _absorbingSoulBeastElement switch
+                {
+                    Core.Combat.Element.Wood => new SoulSkill("Lam Ngan Quan Quanh", Core.Combat.Element.Wood, 1, 20f, 60f),
+                    Core.Combat.Element.Fire => new SoulSkill("Phuong Hoang Hoa Tuyen", Core.Combat.Element.Fire, 1, 25f, 100f),
+                    Core.Combat.Element.Ice => new SoulSkill("Bang Tam Ket Gioi", Core.Combat.Element.Ice, 1, 30f, 80f),
+                    _ => new SoulSkill("Huyen Thiet Kich", Core.Combat.Element.None, 1, 15f, 50f)
+                };
+                skillGainedInfo = Skill1.Name;
+            }
+            else if (SoulRingsCount == 2)
+            {
+                Skill2 = _absorbingSoulBeastElement switch
+                {
+                    Core.Combat.Element.Wood => new SoulSkill("Lam Ngan Tu Lung", Core.Combat.Element.Wood, 2, 40f, 150f),
+                    Core.Combat.Element.Fire => new SoulSkill("Phuong Hoang Huyen Oa", Core.Combat.Element.Fire, 2, 50f, 200f),
+                    Core.Combat.Element.Ice => new SoulSkill("Huyen Bang Xung Kich", Core.Combat.Element.Ice, 2, 45f, 160f),
+                    _ => new SoulSkill("Chan Thien Than Quyen", Core.Combat.Element.None, 2, 35f, 120f)
+                };
+                skillGainedInfo = Skill2.Name;
+            }
+
             Console.WriteLine($"[HỒN HOÀN] ★★★ {OwnerName} hấp thu Hồn Hoàn thứ {SoulRingsCount} " +
                               $"THÀNH CÔNG! ★★★");
             Console.WriteLine($"           Hồn Hoàn: {ringColor} — " +
-                              $"Hồn Thú {_absorbingSoulBeastAge} năm tu vi");
+                              $"Hồn Thú {_absorbingSoulBeastAge} năm tu vi (Hệ: {_absorbingSoulBeastElement})");
             Console.WriteLine($"           Cảnh giới: {GetRealmDisplayName(CurrentRealm)} " +
                               $"— Cấp {CurrentLevel}");
-            Console.WriteLine($"           Hồn Kỹ mới: [Chưa gán — cần HồnKỹ DataSystem]");
+            Console.WriteLine($"           Hồn Kỹ mới: {skillGainedInfo}");
 
             // Tỷ lệ rớt Hồn Cốt: 1/1000
             bool droppedSoulBone = _random.Next(1000) == 0;
