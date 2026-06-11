@@ -1,0 +1,15 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Agent files
+.gemini/
+*.log

@@ -1,0 +1,51 @@
+[
+  {
+    "item_id": "am_khi_tu_tien_01",
+    "name": "Vô Thanh Tụ Tiễn",
+    "type": "HIDDEN_WEAPON",
+    "tier_required": 1,
+    "combat_stats": {
+      "base_damage": 150,
+      "range": 30,
+      "projectile_count": 3,
+      "silent_attack": true
+    },
+    "effects": [
+      {
+        "type": "APPLY_DEBUFF",
+        "status": "POISON",
+        "value": 10,
+        "duration": 5
+      }
+    ],
+    "crafting_recipe": [
+      { "item_id": "mat_thi_thiet_mau", "quantity": 1 },
+      { "item_id": "lo_xo_co_quan", "quantity": 1 }
+    ]
+  },
+  {
+    "item_id": "am_khi_chu_cat_02",
+    "name": "Chư Cát Thần Nỗ",
+    "type": "HIDDEN_WEAPON",
+    "tier_required": 3,
+    "combat_stats": {
+      "base_damage": 80,
+      "range": 50,
+      "projectile_count": 16,
+      "silent_attack": false
+    },
+    "effects": [
+      {
+        "type": "APPLY_DEBUFF",
+        "status": "BLEED",
+        "value": 5,
+        "duration": 8
+      }
+    ],
+    "crafting_recipe": [
+      { "item_id": "mat_thi_thiet_mau", "quantity": 3 },
+      { "item_id": "lo_xo_co_quan", "quantity": 5 },
+      { "item_id": "day_cung_kim_ti", "quantity": 2 }
+    ]
+  }
+]

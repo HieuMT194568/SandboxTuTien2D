@@ -1,0 +1,39 @@
+[
+  {
+    "item_id": "food_huong_trang_01",
+    "name": "Khôi Phục Hương Tràng",
+    "type": "CONSUMABLE",
+    "source": "SOUL_SKILL_CREATED",
+    "tier_required": 1,
+    "effects": [
+      {
+        "type": "HEAL_HP",
+        "value_percentage": 20
+      },
+      {
+        "type": "RECOVER_SOUL_POWER",
+        "value_percentage": 10
+      }
+    ],
+    "spoilage_time": 43200
+  },
+  {
+    "item_id": "food_da_long_trang_02",
+    "name": "Đà Long Trường Nha Xúc Xích",
+    "type": "CONSUMABLE",
+    "source": "SOUL_SKILL_CREATED",
+    "tier_required": 2,
+    "effects": [
+      {
+        "type": "HEAL_HP",
+        "value_percentage": 35
+      },
+      {
+        "type": "BOOST_ATTACK",
+        "value": 15,
+        "duration": 300
+      }
+    ],
+    "spoilage_time": 21600
+  }
+]
