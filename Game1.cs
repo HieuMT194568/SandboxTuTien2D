@@ -1548,9 +1548,13 @@ public class Game1 : Game
                     _ => Color.Gray
                 };
                 
-                float pulse = 0.5f + 0.1f * (float)Math.Sin(gameTimeForDraw * 6f);
+                Vector2 ringOrigin = new Vector2(_ringTexture.Width / 2f, _ringTexture.Height / 2f);
+                float targetScale = (ringSize * 0.9f) / _ringTexture.Width;
+                float pulse = 0.9f + 0.1f * (float)Math.Sin(gameTimeForDraw * 6f);
+                float finalScale = targetScale * pulse;
+
                 _spriteBatch.Draw(_ringTexture, new Vector2(rx + ringSize / 2f, ringsStartY + ringSize / 2f), null, 
-                                  ringColor, (float)gameTimeForDraw, new Vector2(32, 32), 0.28f, SpriteEffects.None, 0f);
+                                  ringColor, (float)gameTimeForDraw, ringOrigin, finalScale, SpriteEffects.None, 0f);
             }
             DrawRect(rx, ringsStartY, ringSize, ringSize, new Color(75, 85, 120), true);
         }
