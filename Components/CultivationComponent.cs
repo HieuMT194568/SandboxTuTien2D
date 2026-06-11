@@ -172,12 +172,39 @@ namespace SandboxTuTien.Components
         /// <summary>Hồn Kỹ chủ động thứ hai (phím W) học được từ Hồn Hoàn 2.</summary>
         public SoulSkill? Skill2 { get; private set; }
 
-        /// <summary>Hồi HP (không vượt quá MaxHP).</summary>
+        /// <summary>Cờ đánh dấu người chơi sở hữu Ngoại Phụ Hồn Cốt Bát Chu Mâu.</summary>
+        public bool HasBatChuMau { get; private set; }
+
+        /// <summary>Số lần ấn Spacebar QTE trong quá trình hấp thu.</summary>
+        public int QTEPressCount { get; set; }
+
+        /// <summary>Bộ đếm thời gian hồi phục HP theo thời gian (Heal over Time).</summary>
+        public float HoTTimer { get; set; }
+
+        /// <summary>Hồi HP (không vượt quá MaxHP) hoặc trừ HP nếu truyền số âm.</summary>
         public void Heal(float amount)
         {
             if (CurrentState == CultivationState.Dead) return;
             HP = Math.Clamp(HP + amount, 0f, MaxHP);
-            Console.WriteLine($"[Hồi HP] {OwnerName} được hồi {amount:F0} HP → HP: {HP:F0}/{MaxHP:F0}");
+            if (amount > 0)
+            {
+                Console.WriteLine($"[Hồi HP] {OwnerName} được hồi {amount:F0} HP → HP: {HP:F0}/{MaxHP:F0}");
+            }
+            else if (amount < 0)
+            {
+                Console.WriteLine($"[Sát Thương] {OwnerName} chịu {-amount:F0} sát thương → HP: {HP:F0}/{MaxHP:F0}");
+                if (HP <= 0)
+                {
+                    HP = 0;
+                    CurrentState = CultivationState.Dead;
+                    Console.WriteLine($"[TỬ VONG] ☠ {OwnerName} đã kiệt sức tử vong!");
+                    _eventManager.Publish(new OnPlayerDiedEvent
+                    {
+                        PlayerName = OwnerName,
+                        CauseOfDeath = "Bị Hồn Thú tấn công chí mạng"
+                    });
+                }
+            }
         }
 
         /// <summary>Hồi Hồn Lực năng lượng (không vượt quá MaxSoulPower).</summary>
@@ -202,6 +229,9 @@ namespace SandboxTuTien.Components
 
         /// <summary>Tuổi Hồn Thú đang hấp thu (năm tu vi).</summary>
         private int _absorbingSoulBeastAge;
+
+        /// <summary>Tuổi Hồn Thú đang hấp thu (năm tu vi) công khai cho HUD.</summary>
+        public int AbsorbingSoulBeastAge => _absorbingSoulBeastAge;
 
         /// <summary>Hệ thuộc tính của Hồn Thú đang hấp thu.</summary>
         private SandboxTuTien.Core.Combat.Element _absorbingSoulBeastElement;
@@ -280,6 +310,13 @@ namespace SandboxTuTien.Components
         public void Update(GameTime gameTime)
         {
             float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+            // Cập nhật hồi phục HP theo thời gian (HoT) từ Oscar Sausage
+            if (HoTTimer > 0)
+            {
+                HoTTimer -= deltaTime;
+                Heal(MaxHP * 0.05f * deltaTime); // Hồi 5% HP tối đa mỗi giây
+            }
 
             switch (CurrentState)
             {
@@ -386,6 +423,7 @@ namespace SandboxTuTien.Components
             _currentDamageWave = 0;
             _timeBetweenWaves = ABSORPTION_DURATION / ABSORPTION_DAMAGE_WAVES;
             _waveTimer = 0f;
+            QTEPressCount = 0; // Reset số lần nhấn QTE
 
             CurrentState = CultivationState.AbsorbingRing;
 
@@ -578,6 +616,15 @@ namespace SandboxTuTien.Components
             CurrentExp = 0;
             BodyLimit = CalculateBodyLimit(SoulRingsCount);
 
+            // Tỷ lệ 1% rơi ra Ngoại Phụ Hồn Cốt Bát Chu Mâu nếu hấp thu vượt BodyLimit
+            if (_absorbingSoulBeastAge > BodyLimit && !HasBatChuMau)
+            {
+                if (_random.NextDouble() < 0.01)
+                {
+                    UnlockBatChuMau();
+                }
+            }
+
             // Hồi phục HP sau hấp thu thành công
             MaxHP = CalculateMaxHP(CurrentLevel);
             HP = MaxHP;
@@ -647,6 +694,20 @@ namespace SandboxTuTien.Components
             Console.WriteLine($"[Tu Luyện] {OwnerName} tiếp tục Minh Tưởng...");
         }
 
+        /// <summary>
+        /// Mở khóa Ngoại Phụ Hồn Cốt Bát Chu Mâu (tăng vĩnh viễn HP, SP và kích hoạt passive độc).
+        /// </summary>
+        public void UnlockBatChuMau()
+        {
+            if (HasBatChuMau) return;
+            HasBatChuMau = true;
+            MaxHP = CalculateMaxHP(CurrentLevel);
+            HP = Math.Clamp(HP + 50f, 0f, MaxHP);
+            MaxSoulPower = CalculateMaxSoulPower(CurrentLevel);
+            SoulPower = Math.Clamp(SoulPower + 30f, 0f, MaxSoulPower);
+            Console.WriteLine($"[CỰC HIẾM] ★★★ {OwnerName} đã hấp thu NGOẠI PHỤ HỒN CỐT BÁT CHU MÂU! (+50 MaxHP, +30 MaxSP, đòn đánh thường có 25% cơ hội tẩm độc) ★★★");
+        }
+
         // ====================================================================
         // CALCULATIONS — Công thức tính toán
         // ====================================================================
@@ -661,19 +722,21 @@ namespace SandboxTuTien.Components
         }
 
         /// <summary>
-        /// HP tối đa = 100 + level × 20.
+        /// HP tối đa = 100 + level × 20 + 50 (nếu có Bát Chu Mâu).
         /// </summary>
         private float CalculateMaxHP(int level)
         {
-            return 100f + level * 20f;
+            float baseHP = 100f + level * 20f;
+            return HasBatChuMau ? baseHP + 50f : baseHP;
         }
 
         /// <summary>
-        /// Hồn Lực năng lượng tối đa = 100 + level × 10.
+        /// Hồn Lực năng lượng tối đa = 100 + level × 10 + 30 (nếu có Bát Chu Mâu).
         /// </summary>
         private float CalculateMaxSoulPower(int level)
         {
-            return 100f + level * 10f;
+            float baseSP = 100f + level * 10f;
+            return HasBatChuMau ? baseSP + 30f : baseSP;
         }
 
         /// <summary>
@@ -716,7 +779,8 @@ namespace SandboxTuTien.Components
         private float CalculateAbsorptionSuccessRate(int soulBeastAge)
         {
             if (soulBeastAge <= 0) return 1f;
-            float rate = (BodyLimit / soulBeastAge) + WillpowerBuff;
+            float qteBuff = QTEPressCount * 0.02f; // Mỗi lần ấn Spacebar cộng 2% tỷ lệ thành công
+            float rate = (BodyLimit / soulBeastAge) + WillpowerBuff + qteBuff;
             return Math.Clamp(rate, 0f, 1f);
         }
 

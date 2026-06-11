@@ -171,22 +171,30 @@ namespace SandboxTuTien.Components
                 }
 
                 // Thực hiện sử dụng thực phẩm
-                Console.WriteLine($"[Túi Đồ] {player.Name} sử dụng: {consumable.Name}");
-                foreach (var effect in consumable.Effects)
+                if (consumable.ItemId == "food_huong_trang_01")
                 {
-                    if (effect.Type == "HEAL_HP")
+                    player.Cultivation.HoTTimer = 10f; // 10 giây hồi máu theo thời gian
+                    Console.WriteLine($"[Túi Đồ] {player.Name} sử dụng: {consumable.Name} - Nhận buff hồi 5% HP/giây trong 10 giây.");
+                }
+                else
+                {
+                    Console.WriteLine($"[Túi Đồ] {player.Name} sử dụng: {consumable.Name}");
+                    foreach (var effect in consumable.Effects)
                     {
-                        float healAmount = effect.ValuePercentage > 0
-                            ? player.Cultivation.MaxHP * (effect.ValuePercentage / 100f)
-                            : effect.Value;
-                        player.Cultivation.Heal(healAmount);
-                    }
-                    else if (effect.Type == "RECOVER_SOUL_POWER")
-                    {
-                        float recoverAmount = effect.ValuePercentage > 0
-                            ? player.Cultivation.MaxSoulPower * (effect.ValuePercentage / 100f)
-                            : effect.Value;
-                        player.Cultivation.RecoverSoulPower(recoverAmount);
+                        if (effect.Type == "HEAL_HP")
+                        {
+                            float healAmount = effect.ValuePercentage > 0
+                                ? player.Cultivation.MaxHP * (effect.ValuePercentage / 100f)
+                                : effect.Value;
+                            player.Cultivation.Heal(healAmount);
+                        }
+                        else if (effect.Type == "RECOVER_SOUL_POWER")
+                        {
+                            float recoverAmount = effect.ValuePercentage > 0
+                                ? player.Cultivation.MaxSoulPower * (effect.ValuePercentage / 100f)
+                                : effect.Value;
+                            player.Cultivation.RecoverSoulPower(recoverAmount);
+                        }
                     }
                 }
 

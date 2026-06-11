@@ -86,6 +86,11 @@ public class Game1 : Game
     private readonly List<FloatingText> _floatingTexts = new();
     private readonly List<AutoLauncher> _launchers = new();
     private readonly List<Particle> _particles = new();
+    private ConsumableSpawner _oscarSpawner = null!;
+    private ConsumableSpawner _anvilSpawner = null!;
+    private readonly List<DroppedItem> _droppedItems = new();
+    private int _nextTurretTypeToPlace = 1;
+    private float _contactDamageTimer = 0f;
 
     private float _shakeTime = 0f;
     private float _shakeIntensity = 0f;
@@ -151,6 +156,18 @@ public class Game1 : Game
         // 7. Cấp phát túi đồ mặc định
         GiveInitialInventoryItems();
 
+        _oscarSpawner = new ConsumableSpawner(new Vector2(250, 380), 15f, "food_huong_trang_01", "Sausage", "CONSUMABLE", 1);
+        _anvilSpawner = new ConsumableSpawner(new Vector2(550, 380), 10f, "item_thiet_mau_01", "Thiet Mau Ammo", "CONSUMABLE", 1);
+
+        _oscarSpawner.OnSpawn += (pos, id, name, type, qty) => {
+            _droppedItems.Add(new DroppedItem(pos, id, name, type, qty));
+            _floatingTexts.Add(new FloatingText(pos - new Vector2(0, 15), $"+ Dropped {name}", Color.Orange, 1.5f));
+        };
+        _anvilSpawner.OnSpawn += (pos, id, name, type, qty) => {
+            _droppedItems.Add(new DroppedItem(pos, id, name, type, qty));
+            _floatingTexts.Add(new FloatingText(pos - new Vector2(0, 15), $"+ Dropped {name}", Color.Gray, 1.5f));
+        };
+
         _previousKeyState = Keyboard.GetState();
         _previousMouseState = Mouse.GetState();
 
@@ -192,10 +209,25 @@ public class Game1 : Game
         // Cập nhật chuyển động người chơi
         UpdatePlayerMovement(currentKeyState, deltaTime);
 
+        Vector2 playerPos = new Vector2(_player.PositionX, _player.PositionY);
+
         // 1. Cập nhật Hồn Thú tự động tiến hóa theo tuổi thọ (1s thực = 24 phút game)
         for (int i = _monsters.Count - 1; i >= 0; i--)
         {
-            _monsters[i].UpdateEvolution(deltaTime, 1440f);
+            _monsters[i].UpdateEvolution(deltaTime, 1440f, playerPos);
+        }
+
+        // 1.5. Boss Territorial Aura (Uy Áp) fear logic on low-level monsters
+        var bosses = _monsters.Where(m => m.Active && m.Age >= 10000).ToList();
+        foreach (var m in _monsters)
+        {
+            if (!m.Active || m.Age >= 1000) continue;
+            var nearBoss = bosses.FirstOrDefault(b => Vector2.Distance(m.Position, b.Position) <= 150f);
+            if (nearBoss != null)
+            {
+                m.PanicTimer = 1.0f;
+                m.PanicSource = nearBoss.Position;
+            }
         }
 
         // 2. Cập nhật hoạt động của Bệ Phóng Ám Khí tự động
@@ -208,6 +240,68 @@ public class Game1 : Game
             {
                 SpawnElementalBurst(launcher.Position, Element.None, 8);
                 TriggerShake(0.08f, 1.5f);
+            }
+        }
+
+        // Cập nhật spawners và dropped items
+        _oscarSpawner.Update(deltaTime);
+        _anvilSpawner.Update(deltaTime);
+
+        for (int i = _droppedItems.Count - 1; i >= 0; i--)
+        {
+            var item = _droppedItems[i];
+            item.Update(deltaTime);
+
+            if (Vector2.Distance(playerPos, item.Position) <= 25f)
+            {
+                bool pickedUp = false;
+                if (item.Type == "CONSUMABLE")
+                {
+                    var data = _consumables.FirstOrDefault(c => c.ItemId == item.ItemId);
+                    if (data != null)
+                    {
+                        _player.Inventory.AddConsumable(data, item.Quantity);
+                        pickedUp = true;
+                    }
+                }
+                else if (item.Type == "HIDDEN_WEAPON")
+                {
+                    var data = _hiddenWeapons.FirstOrDefault(w => w.ItemId == item.ItemId);
+                    if (data != null)
+                    {
+                        _player.Inventory.AddHiddenWeapon(data, item.Quantity);
+                        pickedUp = true;
+                    }
+                }
+
+                if (pickedUp)
+                {
+                    string nameHUD = GetHUDItemName(item.ItemId);
+                    _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 25), $"+ {nameHUD} ({item.Quantity})", Color.LimeGreen));
+                    _droppedItems.RemoveAt(i);
+                }
+            }
+        }
+
+        // Tích lũy sát thương va chạm quái vật (Contact damage 8 HP/sec)
+        if (_player.Cultivation.CurrentState != CultivationState.Dead && _player.Cultivation.CurrentState != CultivationState.AbsorbingRing)
+        {
+            _contactDamageTimer += deltaTime;
+            if (_contactDamageTimer >= 0.5f)
+            {
+                _contactDamageTimer = 0f;
+                float totalContactDmg = 0f;
+                foreach (var monster in _monsters)
+                {
+                    if (monster.Active && monster.CheckCollision(playerPos, 12f))
+                    {
+                        totalContactDmg += 4f;
+                    }
+                }
+                if (totalContactDmg > 0f)
+                {
+                    _player.Cultivation.Heal(-totalContactDmg);
+                }
             }
         }
 
@@ -271,6 +365,31 @@ public class Game1 : Game
             }
         }
 
+        // Draw NPC Oscar
+        Vector2 oscarPos = new Vector2(250, 380);
+        DrawRect((int)oscarPos.X - 10, (int)oscarPos.Y - 10, 20, 20, Color.Pink);
+        DrawRect((int)oscarPos.X - 10, (int)oscarPos.Y - 10, 20, 20, Color.DeepPink, true);
+        _spriteBatch.DrawString(_font, "Oscar", oscarPos - new Vector2(18, 25), Color.Pink, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
+
+        // Draw Anvil Spawner
+        Vector2 anvilPos = new Vector2(550, 380);
+        DrawRect((int)anvilPos.X - 12, (int)anvilPos.Y - 8, 24, 16, Color.DarkGray);
+        DrawRect((int)anvilPos.X - 12, (int)anvilPos.Y - 8, 24, 16, Color.Black, true);
+        _spriteBatch.DrawString(_font, "Anvil", anvilPos - new Vector2(16, 23), Color.LightGray, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
+
+        // Draw Dropped Items
+        foreach (var item in _droppedItems)
+        {
+            if (item.Active)
+            {
+                Texture2D tex = item.ItemId == "food_huong_trang_01" ? _sausageTexture : _needleTexture;
+                float hoverY = (float)Math.Sin(item.HoverTimer * 4f) * 3f;
+                Vector2 drawPos = new Vector2(item.Position.X, item.Position.Y + hoverY);
+                _spriteBatch.Draw(tex, drawPos, null, Color.White, 0f, new Vector2(tex.Width / 2f, tex.Height / 2f), 1.5f, SpriteEffects.None, 0f);
+                _spriteBatch.DrawString(_font, item.Name, drawPos - new Vector2(20, 15), Color.White * 0.8f, 0f, Vector2.Zero, 0.6f, SpriteEffects.None, 0f);
+            }
+        }
+
         // 2. Vẽ các Bệ Phóng Ám Khí tự động xuống đất
         foreach (var launcher in _launchers)
         {
@@ -290,6 +409,13 @@ public class Game1 : Game
                 // Vẽ vòng tròn tầm bắn quét nhỏ mờ bao quanh bệ phóng
                 _spriteBatch.Draw(_ringTexture, launcher.Position, null, Color.White * 0.15f, 
                                   0f, new Vector2(32, 32), launcher.Range / 32f, SpriteEffects.None, 0f);
+
+                // Draw current ammo on turret heads
+                string ammoText = launcher.AmmoCount <= 0 ? "EMPTY" : $"{launcher.AmmoCount}/{launcher.MaxAmmo}";
+                Color ammoColor = launcher.AmmoCount <= 0 ? Color.Red : Color.LimeGreen;
+                Vector2 textSz = _font.MeasureString(ammoText) * 0.6f;
+                _spriteBatch.DrawString(_font, ammoText, launcher.Position - new Vector2(textSz.X / 2f, 25f), 
+                                        ammoColor, 0f, Vector2.Zero, 0.6f, SpriteEffects.None, 0f);
             }
         }
 
@@ -309,8 +435,22 @@ public class Game1 : Game
                 // Quy mô vẽ co dãn dựa trên bán kính va chạm Radius (gốc là 16px -> nhân scale)
                 float scale = (monster.Radius / 16f) * 1.2f;
 
-                _spriteBatch.Draw(tex, monster.Position, null, Color.White, 0f, 
+                Color drawColor = Color.White;
+                if (monster.Age >= 100000)
+                {
+                    drawColor = Color.Red;
+                }
+
+                _spriteBatch.Draw(tex, monster.Position, null, drawColor, 0f, 
                                   new Vector2(16, 16), scale, SpriteEffects.None, 0f);
+
+                // Draw territorial aura circle if vạn niên or mười vạn niên
+                if (monster.Age >= 10000)
+                {
+                    Color auraColor = monster.Age >= 100000 ? Color.Red * 0.15f : Color.Purple * 0.12f;
+                    _spriteBatch.Draw(_ringTexture, monster.Position, null, auraColor, 
+                                      0f, new Vector2(32, 32), 150f / 32f, SpriteEffects.None, 0f);
+                }
 
                 // Vẽ thanh HP quái
                 int hpBarW = (int)(monster.Radius * 1.8f);
@@ -445,8 +585,16 @@ public class Game1 : Game
 
         if (IsKeyJustPressed(keys, Keys.Space))
         {
-            _player.Cultivation.AddExp(500f);
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "+500 EXP (Cheat)", Color.SkyBlue));
+            if (_player.Cultivation.CurrentState == CultivationState.AbsorbingRing)
+            {
+                _player.Cultivation.QTEPressCount++;
+                SpawnElementalBurst(new Vector2(_player.PositionX, _player.PositionY), Element.None, 5);
+            }
+            else
+            {
+                _player.Cultivation.AddExp(500f);
+                _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "+500 EXP (Cheat)", Color.SkyBlue));
+            }
         }
 
         if (IsKeyJustPressed(keys, Keys.I))
@@ -481,6 +629,43 @@ public class Game1 : Game
         if (IsKeyJustPressed(keys, Keys.T))
         {
             PlaceAutoLauncher();
+        }
+
+        // --- Bấm phím [F] để reload bệ phóng ám khí gần nhất ---
+        if (IsKeyJustPressed(keys, Keys.F))
+        {
+            TryReloadNearestTurret();
+        }
+
+        // --- Bấm phím [Y] để chuyển đổi loại bệ phóng đặt tiếp theo ---
+        if (IsKeyJustPressed(keys, Keys.Y))
+        {
+            _nextTurretTypeToPlace = _nextTurretTypeToPlace % 3 + 1;
+            string turretName = _nextTurretTypeToPlace switch
+            {
+                1 => "Vo Thanh Tu Tien",
+                2 => "Chu Cat Than No",
+                3 => "Ham Sa Xa Anh",
+                _ => "Unknown"
+            };
+            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), $"Next Turret: {turretName}", Color.Gold));
+            Console.WriteLine($"[Cơ Quan] Chọn loại bệ phóng tiếp theo: {turretName}");
+        }
+
+        // --- Bấm phím [U] để mở khóa Bát Chu Mâu lập tức ---
+        if (IsKeyJustPressed(keys, Keys.U))
+        {
+            _player.Cultivation.UnlockBatChuMau();
+            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Bat Chu Mau Unlocked! (Cheat)", Color.Magenta));
+        }
+
+        // --- Bấm phím [H] để tạo Hồn Hoàn 99k năm ---
+        if (IsKeyJustPressed(keys, Keys.H))
+        {
+            Vector2 playerPos = new Vector2(_player.PositionX, _player.PositionY);
+            var ring = new SoulRingEntity(playerPos, 99000, Element.Wood);
+            _soulRings.Add(ring);
+            _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 15), "Spawned 99k-year Ring! (Cheat)", Color.Yellow, 2f));
         }
 
         // Sử dụng phím tắt 1->5
@@ -657,16 +842,76 @@ public class Game1 : Game
             return;
         }
 
+        // Kiểm tra xem người chơi có đạn Thiết Mẫu không
+        var ammoItem = _player.Inventory.Items.FirstOrDefault(i => i.ItemId == "item_thiet_mau_01");
+        if (ammoItem == null || ammoItem.Quantity <= 0)
+        {
+            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Can 1 Thiet Mau Ammo de dat!", Color.Red));
+            Console.WriteLine("[Cơ Quan] Thất bại: Không có đạn Thiết Mẫu trong túi đồ để đặt bệ phóng!");
+            return;
+        }
+
+        // Tiêu hao 1 Thiết Mẫu
+        _player.Inventory.RemoveItem("item_thiet_mau_01", 1);
+
         Vector2 playerPos = new Vector2(_player.PositionX, _player.PositionY);
-        var turret = new AutoLauncher(playerPos);
+        var turret = new AutoLauncher(playerPos, _nextTurretTypeToPlace);
         _launchers.Add(turret);
 
         // Hiệu ứng khói bụi xẹt lửa khi đặt bệ phóng cơ quan
         TriggerShake(0.15f, 3.0f);
         SpawnElementalBurst(playerPos, Element.None, 15);
 
-        _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 15), "+ Auto Turret", Color.Gold));
-        Console.WriteLine($"[Cơ Quan] ⚙ Đã đặt Bệ Phóng Ám Khí tự động tại vị trí {playerPos.X:F0},{playerPos.Y:F0} (Tổng số: {_launchers.Count}/3).");
+        string turretName = _nextTurretTypeToPlace switch
+        {
+            1 => "Vo Thanh Tu Tien",
+            2 => "Chu Cat Than No",
+            3 => "Ham Sa Xa Anh",
+            _ => "Turret"
+        };
+
+        _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 15), $"+ {turretName}", Color.Gold));
+        Console.WriteLine($"[Cơ Quan] ⚙ Đã đặt bệ phóng {turretName} tại vị trí {playerPos.X:F0},{playerPos.Y:F0} (Tổng số: {_launchers.Count}/3).");
+    }
+
+    private void TryReloadNearestTurret()
+    {
+        if (_player.Cultivation.CurrentState == CultivationState.Dead) return;
+
+        Vector2 playerPos = new Vector2(_player.PositionX, _player.PositionY);
+        
+        // Find nearest turret within 60px
+        var nearestTurret = _launchers
+            .Where(t => t.Active && Vector2.Distance(playerPos, t.Position) <= 60f)
+            .OrderBy(t => Vector2.Distance(playerPos, t.Position))
+            .FirstOrDefault();
+
+        if (nearestTurret == null)
+        {
+            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Khong co Be Phong gan day!", Color.Gray));
+            return;
+        }
+
+        if (nearestTurret.AmmoCount >= nearestTurret.MaxAmmo)
+        {
+            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Be Phong da day dan!", Color.Yellow));
+            return;
+        }
+
+        // Check if player has Thiết Mẫu Ammo
+        var ammoItem = _player.Inventory.Items.FirstOrDefault(i => i.ItemId == "item_thiet_mau_01");
+        if (ammoItem == null || ammoItem.Quantity <= 0)
+        {
+            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Khong du Thiet Mau Ammo!", Color.Red));
+            return;
+        }
+
+        // Consume 1 Thiết Mẫu and reload
+        _player.Inventory.RemoveItem("item_thiet_mau_01", 1);
+        nearestTurret.Reload();
+        
+        _floatingTexts.Add(new FloatingText(nearestTurret.Position - new Vector2(0, 20), "RELOADED!", Color.LimeGreen));
+        Console.WriteLine($"[Cơ Quan] ⚙ Đã nạp lại đạn cho Bệ phóng tại {nearestTurret.Position.X:F0},{nearestTurret.Position.Y:F0}. Tiêu hao 1 Thiết Mẫu.");
     }
 
     private void FireActiveWeapon(Vector2 targetPos)
@@ -791,6 +1036,28 @@ public class Game1 : Game
                 if (monster.CheckCollision(proj.Position))
                 {
                     proj.Active = false;
+
+                    // Apply aggro if projectile is not silent
+                    if (!proj.IsSilent)
+                    {
+                        monster.IsAggroed = true;
+                    }
+
+                    // Apply root if Wood skill and monster is Speed role
+                    if (proj.Element == Element.Wood && proj.Damage > 30f)
+                    {
+                        float rootDur = (monster.Role == "Speed") ? 3.5f : 1.5f;
+                        monster.RootTimer = rootDur;
+                        _floatingTexts.Add(new FloatingText(monster.Position - new Vector2(0, 30), $"ROOTED ({rootDur:F1}s) VN!", Color.LimeGreen, 1.5f));
+                    }
+
+                    // Apply poison if player has Bát Chu Mâu (25% chance on hit)
+                    if (_player.Cultivation.HasBatChuMau && _random.NextDouble() < 0.25)
+                    {
+                        monster.PoisonTimer = 5.0f;
+                        _floatingTexts.Add(new FloatingText(monster.Position - new Vector2(0, 45), "POISON VN!", Color.Purple, 1.2f));
+                    }
+
                     monster.TakeDamage(proj.Damage, proj.Element, out float finalDmg, out bool isCounter);
 
                     Color txtColor = isCounter ? Color.Red : Color.Orange;
@@ -870,6 +1137,7 @@ public class Game1 : Game
             "food_huong_trang_01" => "Sausage (Phuc Hoi)",
             "am_khi_tu_tien_01" => "Vo Thanh Tu Tien",
             "am_khi_chu_cat_02" => "Chu Cat Than No",
+            "item_thiet_mau_01" => "Thiet Mau Ammo",
             _ => "Tay khong"
         };
     }
@@ -937,6 +1205,16 @@ public class Game1 : Game
         string activeWeaponName = GetHUDItemName(_player.Inventory.EquippedWeapon?.ItemId ?? string.Empty);
         _spriteBatch.DrawString(_font, $"Am Khi: {activeWeaponName} | Turrets: {_launchers.Count}/3", new Vector2(startX, wY + 5), Color.Khaki, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
 
+        // Next turret cycling info
+        string nextTurretName = _nextTurretTypeToPlace switch
+        {
+            1 => "Vo Thanh Tu Tien",
+            2 => "Chu Cat Than No",
+            3 => "Ham Sa Xa Anh",
+            _ => "Unknown"
+        };
+        _spriteBatch.DrawString(_font, $"Next: {nextTurretName} (Y)", new Vector2(startX, wY + 20), Color.Tan, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
+
         // Vẽ 9 ô Hồn Hoàn Hấp Thu dưới góc trái HUD
         int ringsStartY = wY + spacing + 12;
         int ringSize = 20;
@@ -983,12 +1261,27 @@ public class Game1 : Game
         Color wColor = cult.Skill2 != null ? Color.Gold : Color.DarkGray;
         _spriteBatch.DrawString(_font, wLabel, new Vector2(skillX + 10, skillY + 80), wColor, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
 
-        // Cảnh báo khi hấp thu
+        // Bát Chu Mâu stats banner below skills box
+        if (cult.HasBatChuMau)
+        {
+            DrawRect(skillX, skillY + 145, 165, 30, new Color(30, 15, 45, 220));
+            DrawRect(skillX, skillY + 145, 165, 30, Color.Purple, true);
+            _spriteBatch.DrawString(_font, "[Bat Chu Mau Passive]", new Vector2(skillX + 8, skillY + 147), Color.Magenta, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
+            _spriteBatch.DrawString(_font, "+50HP +30SP 25% Poison", new Vector2(skillX + 8, skillY + 159), Color.White, 0f, Vector2.Zero, 0.65f, SpriteEffects.None, 0f);
+        }
+
+        // Cảnh báo khi hấp thu & QTE Willpower bar
         if (cult.CurrentState == CultivationState.AbsorbingRing)
         {
             float pulse = (float)(Math.Sin(gameTimeForDraw * 8.0) * 0.4 + 0.6);
             string warnMsg = "!!! WARNING: ABSORBING SOUL RING - Press [1] to eat Sausage !!!";
             _spriteBatch.DrawString(_font, warnMsg, new Vector2(100, 195), Color.Red * pulse, 0f, Vector2.Zero, 1.05f, SpriteEffects.None, 0f);
+
+            string qteInstructions = "TAP SPACEBAR FAST TO BUILD WILLPOWER!";
+            _spriteBatch.DrawString(_font, qteInstructions, new Vector2(100, 220), Color.Gold, 0f, Vector2.Zero, 0.9f, SpriteEffects.None, 0f);
+
+            float willpowerRatio = Math.Clamp(cult.QTEPressCount * 0.05f, 0f, 1f);
+            DrawPremiumBar(100, 245, 250, 15, willpowerRatio, new Color(30, 30, 45), Color.Gold, Color.Orange, $"Willpower: {cult.QTEPressCount} (Buff: +{cult.QTEPressCount * 2}%)", Color.Gold);
         }
 
         // Vẽ Bảng hướng dẫn ở đáy màn hình
@@ -997,7 +1290,7 @@ public class Game1 : Game
         DrawRect(20, guideY, 760, 50, new Color(55, 60, 85), true);
         DrawRect(21, guideY + 1, 758, 1, new Color(90, 100, 135, 150)); // top inner highlight
         _spriteBatch.DrawString(_font, "[WASD]: Move | [Left Click]: Normal Fire | [Right Click]: Spawn Monster | [T]: Place Turret", new Vector2(35, guideY + 5), Color.Silver, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
-        _spriteBatch.DrawString(_font, "[I]: Inventory | [E]: Switch Weapon | [1-5]: Quick Eat | [R]: Absorb Ring | [Q/W]: Cast Skills", new Vector2(35, guideY + 26), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, "[I]: Inventory | [E]: Switch Weapon | [1-5]: Quick Eat | [R]: Absorb Ring | [Q/W]: Cast Skills | [F]: Reload | [Y]: Cycle Turret", new Vector2(35, guideY + 26), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
     }
 
     private void DrawInventoryUI()
@@ -1046,6 +1339,7 @@ public class Game1 : Game
 
                 Texture2D? iconTex = item.Type switch
                 {
+                    "CONSUMABLE" when item.ItemId == "item_thiet_mau_01" => _needleTexture,
                     "CONSUMABLE" => _sausageTexture,
                     "HIDDEN_WEAPON" when item.ItemId == "am_khi_tu_tien_01" => _needleTexture,
                     "HIDDEN_WEAPON" when item.ItemId == "am_khi_chu_cat_02" => _boltTexture,
@@ -1133,6 +1427,12 @@ public class Game1 : Game
         if (food != null)
         {
             _player.Inventory.AddConsumable(food, 5);
+        }
+
+        var ammo = _consumables.FirstOrDefault(c => c.ItemId == "item_thiet_mau_01");
+        if (ammo != null)
+        {
+            _player.Inventory.AddConsumable(ammo, 5);
         }
 
         var needle = _hiddenWeapons.FirstOrDefault(w => w.ItemId == "am_khi_tu_tien_01");

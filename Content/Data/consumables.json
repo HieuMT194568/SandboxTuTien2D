@@ -35,5 +35,14 @@
       }
     ],
     "spoilage_time": 21600
+  },
+  {
+    "item_id": "item_thiet_mau_01",
+    "name": "Thiết Mẫu Ammo",
+    "type": "CONSUMABLE",
+    "source": "CRAFTED",
+    "tier_required": 0,
+    "effects": [],
+    "spoilage_time": -1
   }
 ]

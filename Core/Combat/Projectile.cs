@@ -28,6 +28,7 @@ namespace SandboxTuTien.Core.Combat
         public float DistanceTraveled { get; set; }
         public Element Element { get; set; }
         public bool Active { get; set; }
+        public bool IsSilent { get; set; }
 
         public Projectile()
         {
@@ -37,7 +38,7 @@ namespace SandboxTuTien.Core.Combat
         /// <summary>
         /// Kích hoạt lại đạn.
         /// </summary>
-        public void Spawn(Vector2 position, Vector2 velocity, float damage, float range, Element element)
+        public void Spawn(Vector2 position, Vector2 velocity, float damage, float range, Element element, bool isSilent = false)
         {
             Position = position;
             Velocity = velocity;
@@ -45,6 +46,7 @@ namespace SandboxTuTien.Core.Combat
             Range = range;
             DistanceTraveled = 0f;
             Element = element;
+            IsSilent = isSilent;
             Active = true;
         }
 

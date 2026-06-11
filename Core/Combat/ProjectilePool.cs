@@ -32,7 +32,8 @@ namespace SandboxTuTien.Core.Combat
         /// <param name="range">Tầm bắn.</param>
         /// <param name="speed">Tốc độ bay.</param>
         /// <param name="element">Thuộc tính đạn.</param>
-        public void Spawn(Vector2 position, Vector2 direction, float damage, float range, float speed, Element element)
+        /// <param name="isSilent">Có gây thù hận cho quái không.</param>
+        public void Spawn(Vector2 position, Vector2 direction, float damage, float range, float speed, Element element, bool isSilent = false)
         {
             // Tìm đạn đang không hoạt động
             var projectile = _pool.FirstOrDefault(p => !p.Active);
@@ -45,7 +46,7 @@ namespace SandboxTuTien.Core.Combat
             }
 
             Vector2 velocity = direction * speed;
-            projectile.Spawn(position, velocity, damage, range, element);
+            projectile.Spawn(position, velocity, damage, range, element, isSilent);
         }
 
         /// <summary>
