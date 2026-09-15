@@ -32,8 +32,12 @@ namespace SandboxTuTien.Core.Combat
         /// <param name="range">Tầm bắn.</param>
         /// <param name="speed">Tốc độ bay.</param>
         /// <param name="element">Thuộc tính đạn.</param>
-        /// <param name="isSilent">Có gây thù hận cho quái không.</param>
-        public void Spawn(Vector2 position, Vector2 direction, float damage, float range, float speed, Element element, bool isSilent = false)
+        /// <param name="isSilent">True nếu không kinh động Yêu Thú.</param>
+        /// <param name="onHitEffects">Hiệu ứng trạng thái áp lên mục tiêu khi trúng.</param>
+        /// <param name="owner">Nguồn phóng.</param>
+        public void Spawn(Vector2 position, Vector2 direction, float damage, float range, float speed, Element element,
+                          bool isSilent = false, IReadOnlyList<OnHitEffect>? onHitEffects = null,
+                          ProjectileOwner owner = ProjectileOwner.Player)
         {
             // Tìm đạn đang không hoạt động
             var projectile = _pool.FirstOrDefault(p => !p.Active);
@@ -45,8 +49,7 @@ namespace SandboxTuTien.Core.Combat
                 _pool.Add(projectile);
             }
 
-            Vector2 velocity = direction * speed;
-            projectile.Spawn(position, velocity, damage, range, element, isSilent);
+            projectile.Spawn(position, direction * speed, damage, range, element, isSilent, onHitEffects, owner);
         }
 
         /// <summary>

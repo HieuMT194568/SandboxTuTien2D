@@ -1,174 +1,242 @@
-# Sandbox Tu Tiên 2D Pixel — Đấu La Đại Lục (Foundation Codebase)
+# Sandbox Tu Tiên 2D Pixel
 
-Chào mừng bạn đến với **Sandbox Tu Tiên 2D Pixel** (chủ đề Đấu La Đại Lục) — một dự án game nhập vai được xây dựng bằng ngôn ngữ **C#** trên nền tảng **MonoGame framework**. 
+Chào mừng bạn đến với **Sandbox Tu Tiên 2D Pixel** — game nhập vai tu tiên góc nhìn từ trên xuống, viết bằng **C#** trên **MonoGame framework**. Người chơi chọn một trong 4 **lưu phái**, đả tọa tích lũy tu vi, săn Yêu Thú lấy Yêu Đan, luyện đan luyện khí, bày trận pháp và vượt qua bình cảnh — từ xung kích kinh mạch ở Luyện Khí cho tới độ Thiên Kiếp từ Kim Đan trở lên.
 
-Mã nguồn này được thiết kế và triển khai theo tiêu chuẩn kiến trúc chuyên nghiệp: **Data-Driven (Hướng dữ liệu)**, **Component-Based (Hướng thành phần)**, và **Event-Driven (Hướng sự kiện)** nhằm đảm bảo tính mở rộng cao, tối ưu hóa hiệu năng, và tránh tình trạng mã nguồn chồng chéo (Spaghetti code).
-
----
-
-## 🗺️ Kiến Trúc Hệ Thống (Architecture Design)
-
-Hệ thống được thiết kế dựa trên 4 trụ cột kiến trúc cốt lõi:
-
-### 1. Data-Driven Architecture (Kiến trúc Hướng Dữ liệu)
-*   **Mô tả**: Mọi thông số vật phẩm, thuộc tính ám khí, hồn thú, hồn kỹ và thực phẩm tiêu thụ đều được định nghĩa trong các tệp cấu hình JSON (`Content/Data/*`).
-*   **Triển khai**: `DataLoader` sử dụng `System.Text.Json` để tự động chuyển đổi các tệp cấu hình thành các POCO (Plain Old C# Object) nằm trong `Data/Models/` (`HiddenWeaponData`, `ConsumableData`, v.v.). Điều này cho phép Designer dễ dàng cân bằng game (Balance) mà không cần chỉnh sửa hoặc biên dịch lại mã nguồn C#.
-
-### 2. Component-Based Architecture (Kiến trúc Hướng Thành phần)
-*   **Mô tả**: Thực thể (`Entity`) đóng vai trò là các thùng chứa dữ liệu mỏng (data container) và liên kết các thành phần chức năng lại với nhau.
-*   **Triển khai**: `Player` chứa thông tin cơ bản và sở hữu một `CultivationComponent`. Thành phần tu luyện này được triển khai dưới dạng một máy trạng thái hữu hạn (**FSM**) gồm các trạng thái:
-    *   `Idle` (Nhàn rỗi)
-    *   `Meditating` (Minh tưởng tích lũy EXP)
-    *   `BreakthroughReady` (Chạm bình cảnh hồn lực ở các cấp 10, 20, 30..., chờ hấp thu Hồn Hoàn)
-    *   `AbsorbingRing` (Đang hấp thu Hồn Hoàn từ Hồn Thú)
-    *   `Dead` (Hấp thu hồn hoàn vượt quá giới hạn chịu đựng dẫn đến tử vong)
-
-### 3. Event-Driven Architecture (Kiến trúc Hướng Sự kiện)
-*   **Mô tả**: Các hệ thống giao tiếp với nhau một cách lỏng lẻo (decoupled) thông qua một kênh truyền tin trung tâm — **EventBus**.
-*   **Triển khai**: `EventManager` quản lý việc đăng ký (`Subscribe`) và phát sự kiện (`Publish`) một cách an toàn về kiểu dữ liệu (strongly-typed). Các sự kiện chính bao gồm:
-    *   `OnLevelUpEvent`: Phát ra khi Player tăng cấp Hồn Lực.
-    *   `OnRealmChangedEvent`: Phát ra khi Đột phá Cảnh giới thành công (ví dụ: Hồn Sĩ → Hồn Sư).
-    *   `OnBottleneckReachedEvent`: Phát ra khi Hồn Lực chạm ngưỡng giới hạn (cấp 10, 20, 30...) cần Hồn Hoàn.
-    *   `OnBreakthroughSuccessEvent` & `OnBreakthroughFailedEvent`: Kết quả của quá trình hấp thu Hồn Hoàn.
-    *   `OnSoulRingAbsorbedEvent`: Lưu thông tin Hồn Hoàn hấp thu thành công (tuổi hồn hoàn, kỹ năng nhận được).
-    *   `OnPlayerDiedEvent`: Người chơi tử vong khi hấp thu Hồn Hoàn quá giới hạn cơ thể.
-
-### 4. Time-Slicing & Game Time (Hệ thống tối ưu & Thời gian)
-*   **Tối ưu hiệu năng (Time-Slicing)**: Hệ thống `CultivationSystem` quản lý cập nhật tu luyện của tất cả thực thể trong game. Nhằm tránh quá tải CPU khi số lượng thực thể tăng lên hàng ngàn, hệ thống áp dụng kỹ thuật *phân lát thời gian*, chỉ cập nhật tối đa 10 thực thể trên mỗi khung hình thông qua thuật toán Round-Robin Index.
-*   **Hệ thống Thời gian (GameTimeManager)**: Đồng bộ hóa thời gian game theo tỷ lệ `1:1440` (1 giây thực tế bằng 24 phút trong game, tương ứng 1 phút thực tế bằng 1 ngày đêm trong game). Giúp dễ dàng đồng bộ các cơ chế sinh học, thiên tượng hoặc chu kỳ hồi phục hồn lực.
+Mã nguồn theo ba nguyên lý: **Data-Driven**, **Component-Based** và **Event-Driven**, giúp mở rộng dễ dàng và tránh code chồng chéo.
 
 ---
 
-## 📁 Cấu Trúc Thư Mục Dự Án (Directory Structure)
+## 🗺️ Kiến Trúc Hệ Thống
 
-Thư mục dự án được tổ chức phân lớp logic rõ ràng:
+### 1. Data-Driven (Hướng dữ liệu)
+*   Toàn bộ Đan Dược, Vật Liệu, Pháp Khí, Lưu Phái, Chiêu Thức và công thức luyện chế được định nghĩa trong JSON (`Content/Data/*`).
+*   `DataLoader` dùng `System.Text.Json` để chuyển các file thành POCO trong `Data/Models/` (`ConsumableData`, `MagicWeaponData`, `ClassData`, `SkillData`...). `GameDataValidator` kiểm tra chéo `classes.json`/`skills.json` lúc khởi động (chiêu tồn tại, đúng lưu phái, đúng ô, cảnh giới hợp lệ) và chỉ log cảnh báo thay vì crash nếu có lỗi đánh máy.
+*   Lò Luyện tự gom công thức từ trường `crafting_recipe`; Chiêu Thức kiểu `projectile` phóng theo `pattern` (`fan` / `barrage` / `nova`) — thêm nội dung mới không cần sửa code C#.
+
+### 2. Component-Based (Hướng thành phần)
+*   `Player` là thùng chứa dữ liệu mỏng, sở hữu `CultivationComponent`, `InventoryComponent` và `SkillLoadoutComponent`.
+*   `CultivationComponent` là máy trạng thái hữu hạn (**FSM**), chỉ lo tu vi/đột phá:
+    *   `Idle` — Nhàn rỗi
+    *   `Meditating` — Đả Tọa, tích lũy tu vi
+    *   `BreakthroughReady` — Chạm bình cảnh (tầng 10, 20, 30...), tu vi bị khóa
+    *   `Breakthrough` — Đang đột phá (xung quan hoặc độ Thiên Kiếp)
+    *   `Dead` — Tử vong do Yêu Thú tấn công
+*   `SkillLoadoutComponent` tách riêng: lưu phái đã chọn quyết định bộ 6 ô chiêu (đánh thường/chiêu 1-3/lướt/tuyệt kỹ), mở khóa theo cảnh giới (`unlock_realm` của từng chiêu so với `CultivationComponent.CurrentRealm`), và theo dõi độ thông thạo (số lần dùng) để lên bậc công pháp.
+*   `StatusEffectComponent` (gắn trên `Monster`) quản lý hiệu ứng trạng thái dùng chung: Trói, Choáng, Đóng băng, Chậm, Thiêu đốt, Độc theo thời gian, Khiên, buff/debuff.
+
+### 3. Event-Driven (Hướng sự kiện)
+`EventManager` là EventBus strongly-typed. Các sự kiện chính:
+*   `OnLevelUpEvent`, `OnRealmChangedEvent`, `OnBottleneckReachedEvent`
+*   `OnBreakthroughSuccessEvent`, `OnBreakthroughFailedEvent`
+*   `OnLightningStrikeEvent` — mỗi đợt lôi kiếp; `Game1` sinh tia sét có vòng báo hiệu
+*   `OnDamageDealtEvent`, `OnStatusAppliedEvent`, `OnElementalReactionEvent` — do `CombatSystem` phát khi tính sát thương/áp trạng thái
+*   `OnPlayerDiedEvent`
+
+### 4. Time-Slicing & Thời gian game
+*   `CultivationSystem` chỉ cập nhật tối đa 10 thực thể mỗi frame theo vòng xoay (Round-Robin).
+*   `GameTimeManager` đồng bộ thời gian tỷ lệ `1:1440` (1 phút thực = 1 ngày trong game).
+
+---
+
+## 📁 Cấu Trúc Thư Mục
 
 ```text
-game/
-├── Core/                     # Các module cốt lõi của game engine
-│   ├── EventManager.cs       # Trung tâm điều phối EventBus (Subscribe/Publish)
-│   └── GameTimeManager.cs    # Quản lý thời gian trong thế giới game (1s thực = 24 phút game)
+SandboxTuTien2D/
+├── Core/
+│   ├── EventManager.cs          # EventBus + các sự kiện nghiệp vụ
+│   ├── GameTimeManager.cs       # Thời gian thế giới (1s thực = 24 phút game)
+│   ├── Particle.cs              # Hệ thống hạt
+│   ├── PixelArtGenerator.cs     # Hình vẽ thủ tục dự phòng khi thiếu file .png
+│   └── Combat/                  # Element (khắc hệ), Projectile, ProjectilePool
 │
-├── Data/                     # Quản lý cấu hình dữ liệu ngoài
-│   ├── DataLoader.cs         # Đọc tệp JSON từ Content/ và chuyển thành Object C#
-│   └── Models/               # Định nghĩa các Data Model POCO
-│       ├── ConsumableData.cs       # Cấu hình thực phẩm/dược phẩm
-│       ├── CraftingIngredient.cs   # Nguyên liệu chế tạo
-│       ├── HiddenWeaponData.cs     # Cấu hình ám khí (Đường Môn)
-│       └── ItemEffect.cs           # Định nghĩa hiệu ứng vật phẩm
+├── Data/
+│   ├── DataLoader.cs            # Đọc JSON trong Content/Data
+│   ├── GameDataValidator.cs     # Kiểm tra chéo classes.json / skills.json lúc khởi động
+│   ├── MySqlDbManager.cs        # Tự tạo CSDL sandboxtutien_v2, lưu/tải toàn thế giới
+│   └── Models/                  # ConsumableData, MagicWeaponData, ClassData, SkillData, ItemEffect, CraftingIngredient
 │
-├── Components/               # Các component logic độc lập gắn vào Entity
-│   └── CultivationComponent.cs  # Máy trạng thái FSM tu luyện & tính toán hấp thu Hồn Hoàn
+├── Components/
+│   ├── CultivationComponent.cs    # FSM tu luyện, Linh Căn, bình cảnh, xung quan, Thiên Kiếp, Tâm Ma
+│   ├── SkillLoadoutComponent.cs   # Bộ 6 ô chiêu theo lưu phái, mở khóa theo cảnh giới, độ thông thạo
+│   ├── StatusEffectComponent.cs   # Hiệu ứng trạng thái dùng chung (trói, độc, choáng, khiên, buff...)
+│   ├── InventoryComponent.cs      # Túi trữ vật, dùng đan dược, trang bị pháp khí
+│   └── ConsumableSpawner.cs       # Sinh vật phẩm theo chu kỳ (Đan Sư, Lò Luyện)
 │
-├── Systems/                  # Hệ thống quản lý toàn cục các Component
-│   └── CultivationSystem.cs  # Quản lý vòng lặp tu luyện và áp dụng Time-Slicing (tối đa 10 entity/frame)
+├── Systems/
+│   ├── CultivationSystem.cs     # Time-Slicing tối đa 10 entity/frame
+│   ├── CombatSystem.cs          # Va chạm đạn, tìm mục tiêu vùng, tính sát thương, đẩy lùi
+│   ├── SkillSystem.cs           # Thi triển chiêu: mở khóa, hồi chiêu, Linh Lực, hệ số thông thạo
+│   └── ZoneSystem.cs            # Vùng hiệu ứng tồn tại theo thời gian (chiêu kiểu "zone")
 │
-├── Entities/                 # Định nghĩa các thực thể trong game
-│   └── Player.cs             # Thực thể người chơi chứa các dữ liệu thuộc tính
+├── Entities/
+│   ├── Player.cs                # Người chơi
+│   ├── Monster.cs               # Yêu Thú (tuổi → phẩm giai, tiến hóa, độc, trói, uy áp)
+│   ├── FormationArray.cs        # Trận Pháp tự động công kích
+│   └── DroppedItem.cs           # Vật phẩm rơi trên đất
 │
-├── Content/                  # Tài nguyên tĩnh của game
-│   └── Data/                 # File dữ liệu JSON cấu hình cân bằng
-│       ├── consumables.json       # Dữ liệu thực phẩm
-│       └── hidden_weapons.json    # Dữ liệu ám khí Đường Môn
+├── Content/
+│   ├── Data/                    # consumables.json, phap_khi.json, classes.json, skills.json
+│   ├── Fonts/Arial.spritefont   # Font có đủ ký tự tiếng Việt
+│   └── Sprites/                 # Sprite .png (thiếu file nào sẽ dùng hình vẽ thủ tục)
 │
-├── Game1.cs                  # Entry Point chính của MonoGame, kết nối toàn bộ hệ thống & vẽ HUD
-├── Program.cs                # Điểm khởi chạy chương trình C#
-└── SandboxTuTien.csproj      # Cấu hình dự án .NET 8.0 SDK
+├── Game1.cs                     # Vòng lặp chính MonoGame, màn chọn lưu phái, HUD, input, lôi kiếp, Lò Luyện
+├── Program.cs
+└── SandboxTuTien.csproj         # .NET 8.0
 ```
 
 ---
 
-## ⚔️ Cơ Chế Tính Toán Tu Luyện & Hồn Hoàn (Core Game Mechanics)
+## ⚔️ Cơ Chế Tu Tiên
 
-### 1. Phân chia Cảnh Giới (Realms)
-Cảnh giới tu luyện dựa trên cấp độ hồn lực từ 1 đến 99:
-*   Cấp 1 - 10: **Hồn Sĩ** (Hồn hoàn tối đa: 0)
-*   Cấp 11 - 20: **Hồn Sư** (Hồn hoàn tối đa: 1)
-*   Cấp 21 - 30: **Đại Hồn Sư** (Hồn hoàn tối đa: 2)
-*   Cấp 31 - 40: **Hồn Tôn** (Hồn hoàn tối đa: 3)
-*   Cấp 41 - 50: **Hồn Tông** (Hồn hoàn tối đa: 4)
-*   Cấp 51 - 60: **Hồn Vương** (Hồn hoàn tối đa: 5)
-*   Cấp 61 - 70: **Hồn Đế** (Hồn hoàn tối đa: 6)
-*   Cấp 71 - 80: **Hồn Thánh** (Hồn hoàn tối đa: 7)
-*   Cấp 81 - 90: **Hồn Đấu La** (Hồn hoàn tối đa: 8)
-*   Cấp 91 - 99: **Phong Hào Đấu La** (Hồn hoàn tối đa: 9)
+### 0. Lưu Phái
+Chọn một trong 4 lưu phái khi bắt đầu game mới — cố định suốt ván, quyết định hệ số chỉ số, pháp khí dùng được, 2 nội tại và bộ 6 ô chiêu (đánh thường/chiêu 1-3/lướt/tuyệt kỹ):
 
-### 2. Giới Hạn Cơ Thể & Tỷ Lệ Đột Phá Hấp Thu Hồn Hoàn (Đấu La Đại Lục Rule)
-Khi chạm mốc cấp độ bình cảnh (`10, 20, 30...`), người chơi phải hấp thu Hồn Hoàn từ Hồn Thú để đột phá. Giới hạn năm tuổi của Hồn Hoàn an toàn được tính toán theo công thức Đấu La Đại Lục:
-*   Hồn Hoàn 1: **423 năm**
-*   Hồn Hoàn 2: **764 năm**
-*   Hồn Hoàn 3: **1,760 năm**
-*   Hồn Hoàn 4: **5,000 năm**
-*   Hồn Hoàn 5: **12,000 năm**
-*   Hồn Hoàn 6: **20,000 năm**
-*   Hồn Hoàn 7: **50,000 năm**
-*   Hồn Hoàn 8: **100,000 năm**
-*   Hồn Hoàn 9: **Giới hạn tối đa**
+| Lưu phái | Vai trò | HP / Linh lực / Tốc độ | Nội tại |
+| :--- | :--- | :--- | :--- |
+| **Kiếm Tu** | Sát thương đơn mục tiêu, cơ động | 100% / 90% / 110% | Kiếm Ý (đánh trúng liên tục +3%/lần, tối đa +30%), Kiếm Tâm Thông Minh (+15% chí mạng) |
+| **Pháp Tu** | Sát thương diện rộng, khống chế — bộ chiêu chia theo hệ Linh Căn (Hỏa/Mộc/Băng) | 80% / 140% / 100% | Ngũ Hành Tương Khắc (khắc hệ +75% thay vì +50%), Linh Hải |
+| **Thể Tu** | Cận chiến, chống chịu | 150% / 70% / 95% | Đồng Bì Thiết Cốt, Khí Huyết Cuồn Cuộn |
+| **Phù Trận Sư** | Bẫy, hỗ trợ, trận pháp | 90% / 120% / 100% | Trận Đạo Tinh Thông, Phù Lục Tiết Kiệm |
 
-**Công thức tính Tỷ Lệ Đột Phá:**
-$$\text{Tỷ Lệ Thành Công} = \frac{\text{Giới Hạn Cơ Thể}}{\text{Số Năm Tuổi Hồn Hoàn}} + \text{Buff Ý Chí}$$
+Mỗi chiêu mở khóa theo cảnh giới (VD: đánh thường + chiêu 1 ở Luyện Khí, tuyệt kỹ ở Nguyên Anh) và có 4 bậc công pháp (Nhập Môn → Tiểu Thành → Đại Thành → Viên Mãn), lên bậc bằng số lần dùng, mỗi bậc cộng thêm % hiệu quả.
 
-### 3. Sát Thương Nhận Vào Khi Hấp Thu (Absorption Damage)
-Khi bắt đầu hấp thu, trạng thái FSM chuyển sang `AbsorbingRing`. Quá trình diễn ra trong **3 giây thực** (tương đương 5 đợt xung kích năng lượng trong game).
-*   Nếu Hồn Hoàn vượt quá giới hạn an toàn hoặc tỷ lệ thành công thấp, người chơi sẽ nhận sát thương xung kích mỗi đợt:
-    $$\text{Sát Thương Đợt} = \text{Max HP} \times (1 - \text{Tỷ Lệ Thành Công}) \times \text{Random}(0.3 \to 0.5)$$
-*   Nếu lượng HP giảm về `0`, người chơi sẽ rơi vào trạng thái `Dead` (Tử Vong), quá trình hấp thu thất bại. Nếu sống sót qua 5 đợt, đột phá thành công, cảnh giới tăng, và nhận được Hồn Kỹ tương ứng.
+**Cả 4 lưu phái đều chơi được trọn vẹn** — đủ 7 kiểu ra đòn: bắn đạn (`projectile`), cận chiến hình quạt (`melee_arc`), đòn xuống đất có báo hiệu (`ground_aoe`), vùng hiệu ứng theo thời gian (`zone`), buff/khiên bản thân (`self_buff`), lướt/dịch chuyển (`dash`, cả biến thể tăng tốc không di chuyển), vận công (`channel` — hiện thi triển như một vùng tự bùng quanh người thi triển, chưa phải chùm tia liên tục theo hướng nhắm, do input hiện tại chỉ có "bấm 1 lần" chứ chưa có "giữ phím").
+
+**Nội tại đã hoạt động thật** ở cả 4 lưu phái: Kiếm Ý & Kiếm Tâm Thông Minh (Kiếm Tu), Ngũ Hành Tương Khắc & Linh Hải (Pháp Tu — Linh Hải tăng tốc hồi Linh Lực tự nhiên, một cơ chế mới áp dụng cho mọi lưu phái ở mức nền 3 điểm/giây), Đồng Bì Thiết Cốt & Khí Huyết Cuồn Cuộn (Thể Tu — giảm sát thương chung + giảm thêm khi độ Thiên Kiếp, hút máu theo sát thương gây ra), Trận Đạo Tinh Thông & Phù Lục Tiết Kiệm (Phù Trận Sư — tối đa 5 trận thay vì 3, 15% cơ hội thi triển miễn phí). Riêng phần "tăng sức mạnh Trận Pháp gần đó" của Hộ Thân Phù (Phù Trận Sư) chưa được thi triển.
+
+### 1. Cảnh Giới
+Tu vi gồm 100 tầng, mỗi đại cảnh giới 10 tầng:
+
+| Tầng | Cảnh giới | Tầng | Cảnh giới |
+| :--- | :--- | :--- | :--- |
+| 1 – 10 | **Luyện Khí** | 51 – 60 | **Luyện Hư** |
+| 11 – 20 | **Trúc Cơ** | 61 – 70 | **Hợp Thể** |
+| 21 – 30 | **Kim Đan** | 71 – 80 | **Đại Thừa** |
+| 31 – 40 | **Nguyên Anh** | 81 – 90 | **Độ Kiếp** |
+| 41 – 50 | **Hóa Thần** | 91 – 99 | **Chân Tiên** |
+| | | 100 | **Tiên Đế** |
+
+### 2. Linh Căn
+Phẩm chất Linh Căn nhân trực tiếp vào tốc độ đả tọa (`5 × hệ số × Δt` tu vi/giây):
+
+| Hệ số | Linh Căn |
+| :--- | :--- |
+| ≥ 1.8 | Thiên Linh Căn |
+| ≥ 1.2 | Chân Linh Căn |
+| ≥ 0.5 | Tạp Linh Căn |
+| > 0 | Ngụy Linh Căn |
+| 0 | Phế Linh Căn (không thể tu luyện) |
+
+Pháp Tu có Thiên Linh Căn theo hệ đã chọn (Hỏa/Mộc/Băng) — quyết định luôn bộ chiêu. Các lưu phái khác có Chân Linh Căn vô thuộc tính (bộ chiêu của họ không phụ thuộc hệ). Nhân vật: **Lâm Phong**, khởi đầu Luyện Khí tầng 1.
+
+### 3. Bình Cảnh & Đột Phá
+Mỗi khi đạt tầng 10, 20, 30... tu vi bị khóa. Nhấn `[R]` để đột phá:
+
+*   **Xung quan** (bình cảnh tầng 10, 20): 5 đợt linh lực phản phệ, không thể né.
+    $$\text{Sát thương mỗi đợt} = \text{MaxHP} \times (1 - \text{Tỷ lệ}) \times \text{Random}(0.3 \to 0.5)$$
+*   **Độ Thiên Kiếp** (từ tầng 30 trở lên): `2 + tầng/10` đợt lôi kiếp. Mỗi đạo sét hiện **vòng đỏ báo hiệu** 0.8 giây rồi mới đánh xuống — người chơi được di chuyển để né.
+    $$\text{Sát thương mỗi đạo} = \text{MaxHP} \times (0.12 + 0.4 \times (1 - \text{Tỷ lệ}))$$
+
+**Tỷ lệ thành công:**
+$$\text{Tỷ lệ} = \text{Tỷ lệ gốc} + \text{Đan dược} + 2\% \times \text{số lần bấm Space} - \text{Tâm Ma}$$
+*   Tỷ lệ gốc: tầng 10 = 85%, mỗi bình cảnh sau giảm 15%, tối thiểu 20%.
+*   Đan dược: dùng **Phá Cảnh Đan** (+15% mỗi viên, tối đa +50%), tiêu hết sau mỗi lần đột phá.
+*   Kết quả được giới hạn trong khoảng 5% – 100%.
+
+**Kết quả:**
+*   **Thành công**: hồi đầy HP/Linh Lực, Tâm Ma tiêu tan, 1% cơ duyên thức tỉnh **Vạn Độc Thể**. Cảnh giới mới có thể mở khóa thêm ô chiêu trong Thanh Chiêu (báo bằng chữ nổi "Lĩnh ngộ: ...").
+*   **Thất bại** (HP về 0 khi đột phá): không chết, nhưng **đạo cơ tổn hại** — rớt 1 tầng tu vi, còn 20% HP, **Tâm Ma +10%** (tối đa 50%).
+
+### 4. Yêu Thú & Yêu Đan
+*   Tuổi Yêu Thú tăng 8–15 năm mỗi giây thực, quyết định **phẩm giai** (Nhất → Cửu Giai tại các mốc 100 / 300 / 1.000 / 3.000 / 10.000 / 30.000 / 100.000 / 300.000 năm), HP và kích thước.
+*   Yêu Thú ≥ 10.000 năm tỏa **uy áp** khiến Yêu Thú dưới 1.000 năm hoảng sợ bỏ chạy.
+*   Trảm sát Yêu Thú rơi **Yêu Đan** (Hạ / Trung / Thượng phẩm theo phẩm giai) và 40% rơi nguyên liệu theo hệ (Mộc → Linh Mộc Tâm, Hỏa → Hỏa Tinh Thạch, Băng → Hàn Thiết).
+*   Luyện hóa Yêu Đan trực tiếp để tăng tu vi, hoặc dùng làm nguyên liệu luyện đan.
+
+### 5. Luyện Đan & Luyện Khí
+Đứng cạnh **Lò Luyện** và nhấn `[G]`. Công thức mặc định:
+
+| Thành phẩm | Nguyên liệu | Yêu cầu |
+| :--- | :--- | :--- |
+| Thanh Phong Phi Kiếm | 1 Hàn Thiết, 1 Hỏa Tinh Thạch | Luyện Khí |
+| Xích Diễm Kiếm Hạp | 3 Hàn Thiết, 5 Hỏa Tinh Thạch, 2 Linh Mộc Tâm | Trúc Cơ |
+| Bổ Linh Đan | 1 Hạ Phẩm Yêu Đan, 1 Linh Mộc Tâm | Luyện Khí |
+| Phá Cảnh Đan | 2 Hạ Phẩm Yêu Đan, 1 Hỏa Tinh Thạch | Luyện Khí |
+
+NPC **Đan Sư** tự luyện Hồi Xuân Đan mỗi 15 giây; Lò Luyện sinh Linh Thạch mỗi 10 giây.
+
+### 6. Trận Pháp
+Tiêu hao 1 **Linh Thạch** để cắm Trận Kỳ (tối đa 3), nạp lại bằng Linh Thạch:
+*   **Kim Châm Trận**: bắn nhanh (0.5s), 10 sát thương, không kinh động Yêu Thú.
+*   **Phá Quân Kiếm Trận**: chậm (3s), 80 sát thương, tốn 2 phần linh lực.
+*   **Vạn Độc Trận**: 2s, phun độc vụ diện rộng 80px, gây độc 5 giây.
+
+### 7. Khắc Hệ
+**Hỏa > Mộc > Băng > Hỏa** — đòn khắc hệ gây thêm **50%** sát thương. Hỏa hệ thiêu sạch độc tố; Mộc hệ mạnh trói chân Yêu Thú (Yêu Thú tốc độ bị trói lâu hơn).
 
 ---
 
-## 🎮 Hướng Dẫn Cài Đặt & Chạy Thử Nghiệm (Build & Run)
+## 🎮 Cài Đặt & Chạy
 
-### 📋 Yêu cầu hệ thống
-1. Đã cài đặt **.NET 8.0 SDK** (phiên bản khuyến nghị: 8.0.400 hoặc mới hơn).
-2. Hệ điều hành Windows (phù hợp với môi trường hiện tại của Workspace).
+### Yêu cầu
+1. **.NET 8.0 SDK**.
+2. Windows.
+3. (Tùy chọn) **MySQL** tại `localhost:3306`, user `root`. Game tự tạo CSDL `sandboxtutien_v2`; nếu không kết nối được sẽ chạy offline bằng JSON (không lưu/tải được).
 
-### 🚀 Cách chạy Game
-Mở PowerShell hoặc Command Prompt tại thư mục gốc của dự án (`d:\VSCODE\game`), chạy các lệnh sau:
+### Chạy game
+Tại thư mục gốc `SandboxTuTien2D`:
 
 ```powershell
-# 1. Biên dịch dự án (Đảm bảo 0 lỗi, 0 cảnh báo)
 dotnet build
-
-# 2. Khởi chạy game
 dotnet run
 ```
 
-### ⌨️ Phím Tắt Kiểm Thử (Keyboard Test Suite)
-Khi chạy game, màn hình Console sẽ ghi lại chi tiết các Log sự kiện thời gian thực. Bạn có thể sử dụng các phím tắt sau trên cửa sổ MonoGame để kiểm tra các luồng nghiệp vụ:
+### 🧙 Màn Hình Chọn Lưu Phái
+Mở game là vào thẳng màn chọn lưu phái: **`[1]`–`[4]`** chọn lưu phái, **`[Enter]`** xác nhận. Nếu chọn Pháp Tu, bước tiếp theo chọn hệ Linh Căn: **`[1]`** Hỏa, **`[2]`** Mộc, **`[3]`** Băng, **`[Enter]`** xác nhận, **`[Backspace]`** quay lại chọn lưu phái.
 
-*   **`[M]` (Minh Tưởng)**: Bật/Tắt chế độ Minh Tưởng. Khi bật, Hồn Sĩ sẽ tích lũy EXP tự động dựa trên tốc độ tu luyện.
-*   **`[Space]` (+500 EXP)**: Cộng trực tiếp 500 EXP giúp đẩy nhanh tốc độ lên cấp để kiểm tra cơ chế chạm bình cảnh (Bottleneck) tại cấp 10.
-*   **`[A]` (Hấp thu Hồn Hoàn 400 năm)**: Hấp thu Hồn Hoàn từ Hồn Thú 400 năm (nằm trong giới hạn an toàn 423 năm của Hồn Hoàn thứ nhất). Tỷ lệ thành công cực cao, an toàn.
-*   **`[D]` (Hấp thu Hồn Hoàn 9999 năm)**: Hấp thu Hồn Hoàn siêu việt cực hạn cơ thể. Năng lượng Hồn Hoàn sẽ bạo phát gây sát thương cực lớn liên tục trong 3 giây. Có khả năng cao dẫn đến tử vong (`PlayerDeathEvent`).
-*   **`[Esc]`**: Thoát game an toàn.
-
----
-
-## 📊 Trạng Thái Hiện Tại & Báo Cáo Tiến Độ (Current Progress)
-
-Dưới đây là bảng tổng hợp tiến độ hoàn thành các module chức năng:
-
-| Module | Tên Tệp Tin / Đường Dẫn | Trạng Thái | Mô Tả Chi Tiết |
-| :--- | :--- | :--- | :--- |
-| **Cấu Trúc** | `SandboxTuTien.csproj` | ✅ **Hoàn thành** | Chuyển đổi thành công sang cấu hình .NET 8.0, kích hoạt Nullable. Cài đặt NuGet `MySqlConnector`. |
-| **Hệ Sự Kiện** | [EventManager.cs](file:///d:/VSCODE/game/Core/EventManager.cs) | ✅ **Hoàn thành** | Triển khai EventBus Generic không đồng bộ và 7 sự kiện nghiệp vụ cốt lõi. |
-| **Hệ Thời Gian** | [GameTimeManager.cs](file:///d:/VSCODE/game/Core/GameTimeManager.cs) | ✅ **Hoàn thành** | Đồng bộ thời gian thực 1:1440 với định dạng hiển thị trực quan. |
-| **Data Models** | [Data/Models/](file:///d:/VSCODE/game/Data/Models/) | ✅ **Hoàn thành** | Định nghĩa cấu trúc POCO cho Ám Khí, Thực Phẩm, Thuộc Tính và Hiệu Ứng. |
-| **Data Loader** | [DataLoader.cs](file:///d:/VSCODE/game/Data/DataLoader.cs) | ✅ **Hoàn thành** | Trình đọc tệp cấu hình JSON linh hoạt sử dụng `System.Text.Json` làm dự phòng (Offline Fallback). |
-| **FSM Tu Luyện** | [CultivationComponent.cs](file:///d:/VSCODE/game/Components/CultivationComponent.cs) | ✅ **Hoàn thành** | Xây dựng máy trạng thái FSM tu luyện, bộ lọc giới hạn hồn hoàn Đấu La và cơ chế sát thương bạo phát. |
-| **Hệ Tu Luyện** | [CultivationSystem.cs](file:///d:/VSCODE/game/Systems/CultivationSystem.cs) | ✅ **Hoàn thành** | Tối ưu hóa cập nhật với giải thuật cắt lát thời gian (Time-Slicing). |
-| **Thực Thể** | [Player.cs](file:///d:/VSCODE/game/Entities/Player.cs) | ✅ **Hoàn thành** | Triển khai thực thể người chơi, nạp dữ liệu nền tảng và gán component. |
-| **Hồ Sơ Cấu Hình** | `Content/Data/*.json` | ✅ **Hoàn thành** | Thiết lập cấu hình mẫu cho Ám khí (Vô Ảnh Châm, Khổng Tước Lực) và Thực phẩm (Xúc Xích Phục Hồi). |
-| **Giao Diện & HUD** | [Game1.cs](file:///d:/VSCODE/game/Game1.cs) | ✅ **Hoàn thành** | Kết nối toàn bộ hệ thống, tích hợp HUD vẽ thanh HP/EXP/SP cao cấp, tích hợp bộ gõ phím test. |
-| **Mô-đun Chiến đấu** | [ProjectilePool.cs](file:///d:/VSCODE/game/Core/Combat/ProjectilePool.cs) | ✅ **Hoàn thành** | Tích hợp ám khí Đường Môn cầm tay, hệ thống va chạm đạn bay hiệu năng cao (Object Pool), tính toán khắc hệ nguyên tố và cơ chế rung lắc camera/độ giật. |
-| **Hệ thống Túi đồ** | [InventoryComponent.cs](file:///d:/VSCODE/game/Components/InventoryComponent.cs) | ✅ **Hoàn thành** | Quản lý việc nhặt, lưu trữ, sử dụng thực phẩm hồi phục (buff hồi máu dần của Xúc Xích Oscar) và trang bị các loại ám khí. |
-| **Đồ họa 2D Pixel** | [Content/](file:///d:/VSCODE/game/Content/) | ✅ **Hoàn thành** | Thay thế toàn bộ hình ảnh phẳng bằng Sprite `.png` nghệ thuật tu tiên có chiều sâu. Áp dụng kỹ thuật render 3-pass chống nhòe văn bản và camera cuộn mượt mà. |
-| **CSDL MySQL & World Persistence** | [MySqlDbManager.cs](file:///d:/VSCODE/game/Data/MySqlDbManager.cs) | ✅ **Hoàn thành** | Tự khởi tạo DB và bảng dữ liệu, tự động di cư cấu hình từ JSON. Hỗ trợ lưu trữ hoàn toàn thế giới (quái vật, bệ phóng, hồn hoàn rơi, vật phẩm rơi) dưới định dạng JSON TEXT và tự động đăng ký lại sự kiện (Event Re-binding) khi nạp game. |
+### ⌨️ Phím Điều Khiển (trong game)
+*   **`[W][A][S][D]` / Mũi tên**: Di chuyển.
+*   **Chuột trái**: Đánh thường (chiêu "basic" của lưu phái). **Chuột giữa**: Gọi Yêu Thú ngẫu nhiên tại con trỏ (phục vụ test).
+*   **`[M]`**: Bật/tắt Đả Tọa.
+*   **`[R]`**: Đột phá khi chạm bình cảnh. Trong lúc đột phá, bấm **`[Space]`** liên tục để ổn định đạo tâm (+2% mỗi lần); khi độ Thiên Kiếp, di chuyển để né vòng đỏ.
+*   **`[Q]` / `[E]` / `[C]`**: Thi triển chiêu 1 / 2 / 3. **`[Shift]`**: Lướt. **`[X]`**: Tuyệt kỹ. (Tiêu hao Linh Lực; ô chưa mở khóa hoặc chiêu chưa hỗ trợ sẽ báo rõ lý do.)
+*   **`[Tab]`**: Đổi pháp khí trang bị (không ảnh hưởng sát thương — đòn đánh thường lấy từ lưu phái). **`[I]`**: Túi trữ vật. **`[1]`–`[5]`**: Dùng nhanh vật phẩm.
+*   **`[G]`**: Mở Lò Luyện khi đứng gần (chọn công thức bằng `[F1]`–`[F4]` hoặc chuột).
+*   **`[T]`**: Bày trận (tốn 1 Linh Thạch). **`[Y]`**: Đổi loại trận. **`[F]`**: Nạp Linh Thạch cho trận gần nhất.
+*   **`[F5]` / `[F9]`**: Lưu / Tải game từ MySQL (gồm cả độ thông thạo chiêu thức).
+*   **Phím gian lận (test)**: `[Space]` +500 tu vi (khi không đột phá), `[U]` thức tỉnh Vạn Độc Thể, `[H]` nhận 3 Phá Cảnh Đan.
+*   **`[Esc]`**: Thoát game.
 
 ---
 
-## 🔮 Kế Hoạch Tiếp Theo (Next Steps)
+## 📊 Trạng Thái Hiện Tại
 
-1. **Hệ thống Chế tạo nâng cao (Advanced Crafting)**: Kích hoạt đầy đủ tính năng tương tác với lò rèn Anvil để chế tạo ám khí sử dụng nguyên liệu thu thập được trong thế giới.
-2. **Tiến hóa thực thể & Sinh thái**: Thêm các hành vi thông minh (AI Roaming/Aggro nâng cao) cho quái vật và các mốc tiến hóa tu vi hồn thú trực quan hơn.
-3. **Mở rộng Hệ thống Kỹ năng & Hồn cốt**: Tích hợp thêm nhiều hồn kỹ chủ động/bị động đặc trưng theo hệ nguyên tố và kích hoạt sức mạnh của Hồn cốt Bát Chu Mâu trong chiến đấu thực tế.
+| Module | Tệp | Trạng thái |
+| :--- | :--- | :--- |
+| Hệ sự kiện | [EventManager.cs](Core/EventManager.cs) | ✅ Hoàn thành |
+| Thời gian thế giới | [GameTimeManager.cs](Core/GameTimeManager.cs) | ✅ Hoàn thành |
+| Dữ liệu JSON | [Content/Data/](Content/Data/) + [Data/Models/](Data/Models/) | ✅ Đan dược, pháp khí, lưu phái, chiêu thức, công thức |
+| FSM tu luyện | [CultivationComponent.cs](Components/CultivationComponent.cs) | ✅ Bình cảnh, xung quan, Thiên Kiếp, Tâm Ma, Đan dược, hệ số chỉ số theo lưu phái |
+| Lưu phái & chiêu thức | [SkillLoadoutComponent.cs](Components/SkillLoadoutComponent.cs), [SkillSystem.cs](Systems/SkillSystem.cs) | ✅ Cả 4 lưu phái chơi trọn vẹn, đủ 7 kiểu ra đòn; 8 nội tại hoạt động (trừ phần buff Trận Pháp của Hộ Thân Phù) |
+| Time-Slicing | [CultivationSystem.cs](Systems/CultivationSystem.cs) | ✅ Hoàn thành |
+| Túi trữ vật | [InventoryComponent.cs](Components/InventoryComponent.cs) | ✅ Hoàn thành |
+| Chiến đấu | [CombatSystem.cs](Systems/CombatSystem.cs) | ✅ Va chạm, tìm mục tiêu vùng/quạt, khắc hệ, chí mạng, đẩy lùi, hiệu ứng trạng thái |
+| Yêu Thú | [Monster.cs](Entities/Monster.cs), [StatusEffectComponent.cs](Components/StatusEffectComponent.cs) | ✅ Phẩm giai, tiến hóa, uy áp, hiệu ứng trạng thái dùng chung |
+| Trận pháp | [FormationArray.cs](Entities/FormationArray.cs) | ✅ 3 loại trận |
+| Lò Luyện | [Game1.cs](Game1.cs) | ✅ Luyện đan & luyện khí data-driven |
+| CSDL MySQL | [MySqlDbManager.cs](Data/MySqlDbManager.cs) | ✅ Lưu/tải toàn bộ thế giới + lưu phái + độ thông thạo chiêu thức |
+| Đồ họa | [Content/Sprites/](Content/Sprites/) + [PixelArtGenerator.cs](Core/PixelArtGenerator.cs) | ✅ Đủ 13 sprite .png, không còn phần nào phải fallback vẽ thủ tục lúc chạy |
+
+---
+
+## 🔮 Kế Hoạch Tiếp Theo
+
+1. **Channel dạng chùm tia thật**: hiện Hỏa Long Phệ thi triển như vùng tự bùng quanh người dùng (tái dùng `ZoneSystem`) vì input mới chỉ có "bấm 1 lần"; cần thêm cơ chế "giữ phím" để channel đúng nghĩa là chùm tia liên tục theo hướng ngắm.
+2. **Buff Trận Pháp gần đó**: `formation_power_bonus_percent` của Hộ Thân Phù (Phù Trận Sư) đã có trong dữ liệu nhưng chưa được thi triển.
+3. **StatsComponent**: chỉ số Công/Thủ tách khỏi HP/Linh Lực, để `DEFENSE_DOWN` (Kiếm Tâm Phá Giáp) và phòng thủ Yêu Thú có tác dụng thật.
+4. **Pierce thật sự**: trường `pierce` trên Pháp Khí/Chiêu đã có trong dữ liệu nhưng `CombatSystem` hiện vẫn hủy đạn ngay khi trúng mục tiêu đầu tiên.
+5. **Tiếp tục ván đã lưu từ màn chọn lưu phái**: hiện `[F9]` chỉ nạp lại trong cùng phiên chơi (đã chọn lưu phái); chưa hỗ trợ bỏ qua màn chọn lưu phái khi có save.
+6. **Động Phủ & Linh Điền**: đặt Bồ Đoàn, Trận Nhãn; trồng Linh Thảo với `Time_grow = Base_Time / Linh_Tích_Đất`.
+7. **Nhân quả & Tông môn**: điểm danh vọng theo tông môn, hệ thống truy sát báo thù (Vendetta).
+8. **Thú triều**: giết nhiều Yêu Thú có thể đánh thức Yêu Vương tấn công Động Phủ.
+9. **Cân bằng số liệu**: các con số sát thương/hồi chiêu/khiên hiện chỉ ước lượng hợp lý, chưa qua playtest thực tế nhiều giờ.

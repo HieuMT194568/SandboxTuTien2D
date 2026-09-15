@@ -11,36 +11,39 @@ using SandboxTuTien.Entities;
 namespace SandboxTuTien.Components
 {
     /// <summary>
-    /// Đối tượng vật phẩm trong túi đồ của người chơi.
+    /// Đối tượng vật phẩm trong túi trữ vật của người chơi.
     /// </summary>
     public class InventoryItem
     {
         public string ItemId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
-        public string Type { get; set; } = string.Empty; // CONSUMABLE hoặc HIDDEN_WEAPON
+        public string Type { get; set; } = string.Empty; // CONSUMABLE hoặc MAGIC_WEAPON
         public int Quantity { get; set; }
 
         [JsonIgnore]
         public ConsumableData? Consumable { get; set; }
 
         [JsonIgnore]
-        public HiddenWeaponData? HiddenWeapon { get; set; }
+        public MagicWeaponData? MagicWeapon { get; set; }
     }
 
     /// <summary>
-    /// Component quản lý Túi đồ của nhân vật.
+    /// Component quản lý Túi Trữ Vật của nhân vật.
     /// Thiết kế theo Component-Based Architecture.
     /// </summary>
     public class InventoryComponent
     {
+        public const string TYPE_CONSUMABLE = "CONSUMABLE";
+        public const string TYPE_MAGIC_WEAPON = "MAGIC_WEAPON";
+
         private readonly List<InventoryItem> _items = new();
         private readonly EventManager _eventManager;
 
         /// <summary>Danh sách vật phẩm ở chế độ chỉ đọc.</summary>
         public IReadOnlyList<InventoryItem> Items => _items;
 
-        /// <summary>Ám khí đang được trang bị.</summary>
-        public HiddenWeaponData? EquippedWeapon { get; private set; }
+        /// <summary>Pháp Khí đang được trang bị.</summary>
+        public MagicWeaponData? EquippedWeapon { get; private set; }
 
         /// <summary>Sự kiện xảy ra khi túi đồ thay đổi (để cập nhật HUD).</summary>
         public event Action? OnInventoryChanged;
@@ -51,7 +54,7 @@ namespace SandboxTuTien.Components
         }
 
         /// <summary>
-        /// Thêm Thực Phẩm vào túi đồ.
+        /// Thêm Đan Dược / Vật Liệu vào túi.
         /// </summary>
         public void AddConsumable(ConsumableData data, int quantity = 1)
         {
@@ -68,20 +71,20 @@ namespace SandboxTuTien.Components
                 {
                     ItemId = data.ItemId,
                     Name = data.Name,
-                    Type = "CONSUMABLE",
+                    Type = TYPE_CONSUMABLE,
                     Quantity = quantity,
                     Consumable = data
                 });
             }
 
-            Console.WriteLine($"[Túi Đồ] +{quantity} {data.Name} đã thêm vào túi đồ.");
+            Console.WriteLine($"[Túi Trữ Vật] +{quantity} {data.Name}.");
             OnInventoryChanged?.Invoke();
         }
 
         /// <summary>
-        /// Thêm Ám khí vào túi đồ.
+        /// Thêm Pháp Khí vào túi.
         /// </summary>
-        public void AddHiddenWeapon(HiddenWeaponData data, int quantity = 1)
+        public void AddMagicWeapon(MagicWeaponData data, int quantity = 1)
         {
             if (data == null || quantity <= 0) return;
 
@@ -96,18 +99,18 @@ namespace SandboxTuTien.Components
                 {
                     ItemId = data.ItemId,
                     Name = data.Name,
-                    Type = "HIDDEN_WEAPON",
+                    Type = TYPE_MAGIC_WEAPON,
                     Quantity = quantity,
-                    HiddenWeapon = data
+                    MagicWeapon = data
                 });
             }
 
-            Console.WriteLine($"[Túi Đồ] +{quantity} Ám khí '{data.Name}' đã thêm vào túi đồ.");
+            Console.WriteLine($"[Túi Trữ Vật] +{quantity} Pháp Khí '{data.Name}'.");
             OnInventoryChanged?.Invoke();
         }
 
         /// <summary>
-        /// Xóa vật phẩm khỏi túi đồ.
+        /// Xóa vật phẩm khỏi túi.
         /// </summary>
         public bool RemoveItem(string itemId, int quantity = 1)
         {
@@ -127,88 +130,102 @@ namespace SandboxTuTien.Components
             return true;
         }
 
+        /// <summary>Số lượng một vật phẩm đang có.</summary>
+        public int GetItemCount(string itemId)
+        {
+            return _items.FirstOrDefault(i => i.ItemId == itemId)?.Quantity ?? 0;
+        }
+
         /// <summary>
-        /// Trang bị Ám Khí.
+        /// Trang bị Pháp Khí.
         /// </summary>
         public bool EquipWeapon(string itemId)
         {
-            var item = _items.FirstOrDefault(i => i.ItemId == itemId && i.Type == "HIDDEN_WEAPON");
-            if (item == null || item.HiddenWeapon == null)
+            var item = _items.FirstOrDefault(i => i.ItemId == itemId && i.Type == TYPE_MAGIC_WEAPON);
+            if (item == null || item.MagicWeapon == null)
             {
-                Console.WriteLine($"[Túi Đồ] Không tìm thấy Ám khí '{itemId}' trong túi đồ để trang bị.");
+                Console.WriteLine($"[Túi Trữ Vật] Không tìm thấy Pháp Khí '{itemId}' để trang bị.");
                 return false;
             }
 
-            EquippedWeapon = item.HiddenWeapon;
-            Console.WriteLine($"[Túi Đồ] ⚔ Đã trang bị Ám khí: {EquippedWeapon.Name}");
+            EquippedWeapon = item.MagicWeapon;
+            Console.WriteLine($"[Túi Trữ Vật] ⚔ Đã tế luyện Pháp Khí: {EquippedWeapon.Name}");
             OnInventoryChanged?.Invoke();
             return true;
         }
 
         /// <summary>
-        /// Sử dụng/Tiêu thụ vật phẩm.
+        /// Sử dụng vật phẩm. Trả về false (và không tiêu hao) nếu không dùng được.
         /// </summary>
         public bool UseItem(string itemId, Player player)
         {
             var item = _items.FirstOrDefault(i => i.ItemId == itemId);
             if (item == null || item.Quantity <= 0)
             {
-                Console.WriteLine($"[Túi Đồ] Không tìm thấy vật phẩm '{itemId}' trong túi.");
+                Console.WriteLine($"[Túi Trữ Vật] Không tìm thấy vật phẩm '{itemId}'.");
                 return false;
             }
 
-            if (item.Type == "CONSUMABLE" && item.Consumable != null)
+            if (item.Type == TYPE_MAGIC_WEAPON && item.MagicWeapon != null)
             {
-                var consumable = item.Consumable;
-
-                // Kiểm tra cảnh giới tối thiểu
-                int playerRealmIndex = (int)player.Cultivation.CurrentRealm;
-                if (playerRealmIndex < consumable.TierRequired)
-                {
-                    Console.WriteLine($"[Túi Đồ] Cảnh giới của {player.Name} quá thấp ({player.Cultivation.CurrentRealm}), " +
-                                      $"yêu cầu cấp cảnh giới {consumable.TierRequired} để dùng {consumable.Name}!");
-                    return false;
-                }
-
-                // Thực hiện sử dụng thực phẩm
-                if (consumable.ItemId == "food_huong_trang_01")
-                {
-                    player.Cultivation.HoTTimer = 10f; // 10 giây hồi máu theo thời gian
-                    Console.WriteLine($"[Túi Đồ] {player.Name} sử dụng: {consumable.Name} - Nhận buff hồi 5% HP/giây trong 10 giây.");
-                }
-                else
-                {
-                    Console.WriteLine($"[Túi Đồ] {player.Name} sử dụng: {consumable.Name}");
-                    foreach (var effect in consumable.Effects)
-                    {
-                        if (effect.Type == "HEAL_HP")
-                        {
-                            float healAmount = effect.ValuePercentage > 0
-                                ? player.Cultivation.MaxHP * (effect.ValuePercentage / 100f)
-                                : effect.Value;
-                            player.Cultivation.Heal(healAmount);
-                        }
-                        else if (effect.Type == "RECOVER_SOUL_POWER")
-                        {
-                            float recoverAmount = effect.ValuePercentage > 0
-                                ? player.Cultivation.MaxSoulPower * (effect.ValuePercentage / 100f)
-                                : effect.Value;
-                            player.Cultivation.RecoverSoulPower(recoverAmount);
-                        }
-                    }
-                }
-
-                // Giảm số lượng
-                RemoveItem(itemId, 1);
-                return true;
-            }
-            else if (item.Type == "HIDDEN_WEAPON" && item.HiddenWeapon != null)
-            {
-                // Sử dụng Ám khí đồng nghĩa với việc Trang bị nó
+                // Dùng Pháp Khí đồng nghĩa với việc trang bị nó
                 return EquipWeapon(itemId);
             }
 
-            return false;
+            if (item.Type != TYPE_CONSUMABLE || item.Consumable == null)
+            {
+                return false;
+            }
+
+            var consumable = item.Consumable;
+            var cult = player.Cultivation;
+
+            if (consumable.Effects.Count == 0)
+            {
+                Console.WriteLine($"[Túi Trữ Vật] {consumable.Name} là nguyên liệu, không thể dùng trực tiếp.");
+                return false;
+            }
+
+            // Kiểm tra cảnh giới tối thiểu
+            if ((int)cult.CurrentRealm < consumable.TierRequired)
+            {
+                Console.WriteLine($"[Túi Trữ Vật] Cảnh giới của {player.Name} quá thấp để luyện hóa {consumable.Name} " +
+                                  $"(yêu cầu {CultivationComponent.GetRealmDisplayName((CultivationRealm)consumable.TierRequired)})!");
+                return false;
+            }
+
+            // Vật phẩm cộng tu vi không dùng được khi tu vi đang bị khóa
+            if (consumable.Effects.Any(e => e.Type == "GAIN_CULTIVATION") && !cult.CanGainExp)
+            {
+                Console.WriteLine($"[Túi Trữ Vật] Không thể luyện hóa {consumable.Name} lúc này (tu vi đang bị khóa).");
+                return false;
+            }
+
+            Console.WriteLine($"[Túi Trữ Vật] {player.Name} dùng: {consumable.Name}");
+            foreach (var effect in consumable.Effects)
+            {
+                switch (effect.Type)
+                {
+                    case "HEAL_HP":
+                        cult.Heal(effect.ValuePercentage > 0 ? cult.MaxHP * (effect.ValuePercentage / 100f) : effect.Value);
+                        break;
+                    case "HEAL_HP_OVER_TIME":
+                        cult.ApplyHealOverTime(effect.ValuePercentage / 100f, effect.Duration);
+                        break;
+                    case "RECOVER_SPIRIT_POWER":
+                        cult.RecoverSpiritPower(effect.ValuePercentage > 0 ? cult.MaxSpiritPower * (effect.ValuePercentage / 100f) : effect.Value);
+                        break;
+                    case "BREAKTHROUGH_BUFF":
+                        cult.AddPillBuff(effect.ValuePercentage / 100f);
+                        break;
+                    case "GAIN_CULTIVATION":
+                        cult.AddExp(effect.Value);
+                        break;
+                }
+            }
+
+            RemoveItem(itemId, 1);
+            return true;
         }
 
         // ====================================================================
@@ -247,8 +264,7 @@ namespace SandboxTuTien.Components
                 _items.Clear();
                 EquippedWeapon = null;
 
-                // Load danh sách dữ liệu mẫu từ DataLoader để so khớp và khôi phục tham chiếu
-                var hiddenWeapons = loader.LoadHiddenWeapons();
+                var magicWeapons = loader.LoadMagicWeapons();
                 var consumables = loader.LoadConsumables();
 
                 if (root.TryGetProperty("items", out var itemsProperty) && itemsProperty.ValueKind == JsonValueKind.Array)
@@ -259,7 +275,7 @@ namespace SandboxTuTien.Components
                         string type = itemElem.GetProperty("type").GetString() ?? string.Empty;
                         int quantity = itemElem.GetProperty("quantity").GetInt32();
 
-                        if (type == "CONSUMABLE")
+                        if (type == TYPE_CONSUMABLE)
                         {
                             var data = consumables.FirstOrDefault(c => c.ItemId == itemId);
                             if (data != null)
@@ -274,9 +290,9 @@ namespace SandboxTuTien.Components
                                 });
                             }
                         }
-                        else if (type == "HIDDEN_WEAPON")
+                        else if (type == TYPE_MAGIC_WEAPON)
                         {
-                            var data = hiddenWeapons.FirstOrDefault(w => w.ItemId == itemId);
+                            var data = magicWeapons.FirstOrDefault(w => w.ItemId == itemId);
                             if (data != null)
                             {
                                 _items.Add(new InventoryItem
@@ -285,7 +301,7 @@ namespace SandboxTuTien.Components
                                     Name = data.Name,
                                     Type = type,
                                     Quantity = quantity,
-                                    HiddenWeapon = data
+                                    MagicWeapon = data
                                 });
                             }
                         }
@@ -297,20 +313,16 @@ namespace SandboxTuTien.Components
                     string equippedId = eqWeaponProperty.GetString() ?? string.Empty;
                     if (!string.IsNullOrEmpty(equippedId))
                     {
-                        var weapon = hiddenWeapons.FirstOrDefault(w => w.ItemId == equippedId);
-                        if (weapon != null)
-                        {
-                            EquippedWeapon = weapon;
-                        }
+                        EquippedWeapon = magicWeapons.FirstOrDefault(w => w.ItemId == equippedId);
                     }
                 }
 
-                Console.WriteLine($"[Túi Đồ] Đã khôi phục trạng thái túi đồ (Đang có {_items.Count} vật phẩm).");
+                Console.WriteLine($"[Túi Trữ Vật] Đã khôi phục túi đồ ({_items.Count} vật phẩm).");
                 OnInventoryChanged?.Invoke();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Túi Đồ] LỖI khi giải tuần tự hóa túi đồ: {ex.Message}");
+                Console.WriteLine($"[Túi Trữ Vật] LỖI khi giải tuần tự hóa túi đồ: {ex.Message}");
             }
         }
     }

@@ -8,7 +8,7 @@ namespace SandboxTuTien.Data.Models
     /// </summary>
     public class CraftingIngredient
     {
-        /// <summary>ID của nguyên liệu (VD: "mat_thi_thiet_mau").</summary>
+        /// <summary>ID của nguyên liệu (VD: "han_thiet").</summary>
         [JsonPropertyName("item_id")]
         public string ItemId { get; set; } = string.Empty;
 

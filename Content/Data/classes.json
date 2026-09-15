@@ -1,0 +1,137 @@
+[
+  {
+    "id": "kiem_tu",
+    "name": "Kiếm Tu",
+    "role": "Sát thương đơn mục tiêu, cơ động",
+    "description": "Ngự kiếm mà hành, lấy tốc độ và kiếm ý bù cho sự mong manh. Càng đánh trúng liên tục càng mạnh.",
+    "stat_multipliers": { "hp": 1.0, "spirit_power": 0.9, "speed": 1.1 },
+    "allowed_weapon_types": ["SWORD"],
+    "passives": [
+      {
+        "id": "kiem_y",
+        "name": "Kiếm Ý",
+        "description": "Mỗi lần đánh trúng cộng 3% sát thương, tối đa 10 tầng (+30%). Mất hết tầng nếu 3 giây không đánh trúng."
+      },
+      {
+        "id": "kiem_tam_thong_minh",
+        "name": "Kiếm Tâm Thông Minh",
+        "description": "Tỷ lệ chí mạng cơ bản +15%.",
+        "effect": { "type": "CRIT_CHANCE", "value_percentage": 15 }
+      }
+    ],
+    "skills": {
+      "basic": "kiemtu_ngu_kiem_thuat",
+      "skill_1": "kiemtu_kiem_khi_tram",
+      "skill_2": "kiemtu_phan_quang_hoa_anh",
+      "skill_3": "kiemtu_kiem_tam_pha_giap",
+      "dash": "kiemtu_kiem_don",
+      "ultimate": "kiemtu_van_kiem_quy_tong"
+    }
+  },
+  {
+    "id": "phap_tu",
+    "name": "Pháp Tu",
+    "role": "Sát thương diện rộng, khống chế",
+    "description": "Dẫn linh khí ngũ hành thành pháp thuật. Bộ chiêu và pháp bảo gắn chặt với hệ Linh Căn đã chọn.",
+    "stat_multipliers": { "hp": 0.8, "spirit_power": 1.4, "speed": 1.0 },
+    "allowed_weapon_types": ["STAFF", "ORB"],
+    "passives": [
+      {
+        "id": "ngu_hanh_tuong_khac",
+        "name": "Ngũ Hành Tương Khắc",
+        "description": "Đòn khắc hệ gây thêm 75% sát thương thay vì 50% như thông thường."
+      },
+      {
+        "id": "linh_hai",
+        "name": "Linh Hải",
+        "description": "Hồi Linh Lực theo thời gian nhanh hơn 50% so với các lưu phái khác."
+      }
+    ],
+    "skills": {
+      "basic": "phaptu_linh_dan",
+      "dash": "phaptu_suc_dia",
+      "by_element": {
+        "Fire": {
+          "basic": "phaptu_linh_dan",
+          "dash": "phaptu_suc_dia",
+          "skill_1": "phaptu_hoa_cau_thuat",
+          "skill_2": "phaptu_liet_diem_phong_bao",
+          "skill_3": "phaptu_hoa_long_phe",
+          "ultimate": "phaptu_tam_muoi_chan_hoa"
+        },
+        "Wood": {
+          "basic": "phaptu_linh_dan",
+          "dash": "phaptu_suc_dia",
+          "skill_1": "phaptu_trien_dang_thuat",
+          "skill_2": "phaptu_thanh_moc_hoi_xuan",
+          "skill_3": "phaptu_doc_chuong_lam",
+          "ultimate": "phaptu_van_moc_khon_tran"
+        },
+        "Ice": {
+          "basic": "phaptu_linh_dan",
+          "dash": "phaptu_suc_dia",
+          "skill_1": "phaptu_han_bang_tien",
+          "skill_2": "phaptu_bang_phong_ket_gioi",
+          "skill_3": "phaptu_bang_tinh_thuan",
+          "ultimate": "phaptu_huyen_bang_thien_hang"
+        }
+      }
+    }
+  },
+  {
+    "id": "the_tu",
+    "name": "Thể Tu",
+    "role": "Cận chiến, chống chịu",
+    "description": "Luyện thân thành pháp bảo. Xông thẳng vào giữa trận, lấy khí huyết đổi lấy sát thương.",
+    "stat_multipliers": { "hp": 1.5, "spirit_power": 0.7, "speed": 0.95 },
+    "allowed_weapon_types": ["FIST", "ARMOR"],
+    "passives": [
+      {
+        "id": "dong_bi_thiet_cot",
+        "name": "Đồng Bì Thiết Cốt",
+        "description": "Giảm 20% sát thương nhận vào; sát thương từ lôi kiếp khi độ Thiên Kiếp giảm thêm 30%."
+      },
+      {
+        "id": "khi_huyet_cuon_cuon",
+        "name": "Khí Huyết Cuồn Cuộn",
+        "description": "Đòn đánh thường và chiêu cận chiến hút lại 8% sát thương gây ra thành HP."
+      }
+    ],
+    "skills": {
+      "basic": "thetu_khai_son_quyen",
+      "skill_1": "thetu_ba_vuong_chan_dia",
+      "skill_2": "thetu_kim_cuong_bat_hoai",
+      "skill_3": "thetu_thiet_son_khao",
+      "dash": "thetu_manh_ho_xung",
+      "ultimate": "thetu_phap_tuong_thien_dia"
+    }
+  },
+  {
+    "id": "phu_tran_su",
+    "name": "Phù Trận Sư",
+    "role": "Bẫy, hỗ trợ, trận pháp",
+    "description": "Vẽ phù, bày trận, để trận pháp và phù lục thay mình ra đòn. Yếu nhất khi đơn độc cận chiến.",
+    "stat_multipliers": { "hp": 0.9, "spirit_power": 1.2, "speed": 1.0 },
+    "allowed_weapon_types": ["BRUSH", "FORMATION_DISC"],
+    "passives": [
+      {
+        "id": "tran_dao_tinh_thong",
+        "name": "Trận Đạo Tinh Thông",
+        "description": "Được bày tối đa 5 Trận Pháp thay vì 3; nạp Trận Pháp tốn ít Linh Thạch hơn."
+      },
+      {
+        "id": "phu_luc_tiet_kiem",
+        "name": "Phù Lục Tiết Kiệm",
+        "description": "15% cơ hội thi triển chiêu mà không tốn Linh Lực."
+      }
+    ],
+    "skills": {
+      "basic": "phutrans_phi_phu",
+      "skill_1": "phutrans_loi_phu",
+      "skill_2": "phutrans_dinh_than_phu",
+      "skill_3": "phutrans_ho_than_phu",
+      "dash": "phutrans_than_hanh_phu",
+      "ultimate": "phutrans_thien_la_dia_vong_tran"
+    }
+  }
+]

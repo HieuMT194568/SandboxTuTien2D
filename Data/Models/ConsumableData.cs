@@ -4,11 +4,10 @@ using System.Text.Json.Serialization;
 namespace SandboxTuTien.Data.Models
 {
     /// <summary>
-    /// POCO class biểu diễn dữ liệu Thực Phẩm Phụ Trợ (Consumable / Food).
-    /// Ánh xạ trực tiếp từ cấu trúc JSON trong CONTEXT_TUTIEN.md mục 4.B.
+    /// POCO class biểu diễn Đan Dược / Vật Liệu tiêu hao (Consumable).
+    /// Ánh xạ trực tiếp từ Content/Data/consumables.json.
     ///
-    /// Ví dụ: "Khôi Phục Hương Tràng" — xúc xích hồi phục của Áo Tư Tạp,
-    /// hồi 20% HP + 10% Hồn Lực, hết hạn sau 12 canh giờ.
+    /// Ví dụ: "Hồi Xuân Đan" — hồi 20% HP ngay và 5% HP/giây trong 10 giây.
     /// </summary>
     public class ConsumableData
     {
@@ -23,8 +22,8 @@ namespace SandboxTuTien.Data.Models
         public string Type { get; set; } = string.Empty;
 
         /// <summary>
-        /// Nguồn gốc vật phẩm: SOUL_SKILL_CREATED (do Hồn Kỹ tạo ra),
-        /// CRAFTED (chế tạo), LOOTED (nhặt được), v.v.
+        /// Nguồn gốc vật phẩm: NPC_ALCHEMIST (Đan Sư luyện), CRAFTED (tự luyện),
+        /// MONSTER_DROPPED (Yêu Thú rơi), v.v.
         /// </summary>
         [JsonPropertyName("source")]
         public string Source { get; set; } = string.Empty;
@@ -37,9 +36,12 @@ namespace SandboxTuTien.Data.Models
         [JsonPropertyName("effects")]
         public List<ItemEffect> Effects { get; set; } = new();
 
+        /// <summary>Công thức luyện đan (rỗng nếu không luyện được).</summary>
+        [JsonPropertyName("crafting_recipe")]
+        public List<CraftingIngredient> CraftingRecipe { get; set; } = new();
+
         /// <summary>
-        /// Thời gian hư hỏng tính bằng giây game.
-        /// VD: 43200 = 12 canh giờ cho Hương Tràng.
+        /// Thời gian đan dược mất dược lực tính bằng giây game (-1 = vĩnh viễn).
         /// Sau thời gian này, vật phẩm sẽ biến mất khỏi inventory.
         /// </summary>
         [JsonPropertyName("spoilage_time")]

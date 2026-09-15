@@ -2,18 +2,22 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using MySqlConnector;
+using SandboxTuTien.Components;
 using SandboxTuTien.Data.Models;
 using SandboxTuTien.Entities;
-using SandboxTuTien.Components;
-using SandboxTuTien.Core.Combat;
 
 namespace SandboxTuTien.Data
 {
     public class MySqlDbManager
     {
+        /// <summary>
+        /// Tên CSDL. Bản tu tiên dùng CSDL mới, không đọc save của bản Đấu La cũ (sandboxtutien).
+        /// </summary>
+        private const string DATABASE_NAME = "sandboxtutien_v2";
+
         // Cấu hình kết nối MySQL mặc định
         private readonly string _connectionStringWithoutDb = "Server=localhost;User ID=root;Password=123456;Port=3306;AllowUserVariables=True;UseAffectedRows=True;";
-        private readonly string _connectionString = "Server=localhost;Database=sandboxtutien;User ID=root;Password=123456;Port=3306;AllowUserVariables=True;UseAffectedRows=True;";
+        private readonly string _connectionString = $"Server=localhost;Database={DATABASE_NAME};User ID=root;Password=123456;Port=3306;AllowUserVariables=True;UseAffectedRows=True;";
         private readonly JsonSerializerOptions _jsonOptions;
 
         public bool IsConnected { get; private set; }
@@ -40,18 +44,18 @@ namespace SandboxTuTien.Data
                     conn.Open();
                     using (var cmd = conn.CreateCommand())
                     {
-                        cmd.CommandText = "CREATE DATABASE IF NOT EXISTS sandboxtutien CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;";
+                        cmd.CommandText = $"CREATE DATABASE IF NOT EXISTS {DATABASE_NAME} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;";
                         cmd.ExecuteNonQuery();
                     }
                 }
 
-                // 2. Kết nối vào DB mới tạo và thiết lập các bảng
+                // 2. Kết nối vào DB và thiết lập các bảng
                 using (var conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
                     using (var cmd = conn.CreateCommand())
                     {
-                        // Bảng Consumables (Vật phẩm tiêu thụ / Dược phẩm)
+                        // Bảng Đan Dược / Vật Liệu
                         cmd.CommandText = @"
                             CREATE TABLE IF NOT EXISTS consumables (
                                 item_id VARCHAR(50) PRIMARY KEY,
@@ -60,16 +64,18 @@ namespace SandboxTuTien.Data
                                 source VARCHAR(50),
                                 tier_required INT DEFAULT 0,
                                 effects_json TEXT,
+                                crafting_recipe_json TEXT,
                                 spoilage_time INT DEFAULT -1
                             ) ENGINE=InnoDB;";
                         cmd.ExecuteNonQuery();
 
-                        // Bảng Hidden Weapons (Ám khí Đường Môn)
+                        // Bảng Pháp Khí
                         cmd.CommandText = @"
-                            CREATE TABLE IF NOT EXISTS hidden_weapons (
+                            CREATE TABLE IF NOT EXISTS magic_weapons (
                                 item_id VARCHAR(50) PRIMARY KEY,
                                 name VARCHAR(100) NOT NULL,
                                 type VARCHAR(50) NOT NULL,
+                                element VARCHAR(20) DEFAULT 'None',
                                 tier_required INT DEFAULT 0,
                                 combat_stats_json TEXT,
                                 effects_json TEXT,
@@ -77,31 +83,59 @@ namespace SandboxTuTien.Data
                             ) ENGINE=InnoDB;";
                         cmd.ExecuteNonQuery();
 
-                        // Bảng Player Saves (Lưu trữ chỉ số, túi đồ người chơi và toàn bộ thế giới)
+                        // Bảng lưu game (chỉ số người chơi, lưu phái, chiêu thức, túi đồ và toàn bộ thế giới)
                         cmd.CommandText = @"
                             CREATE TABLE IF NOT EXISTS player_saves (
                                 save_slot VARCHAR(50) PRIMARY KEY,
                                 player_name VARCHAR(100) NOT NULL,
+                                class_id VARCHAR(50),
+                                class_element VARCHAR(20),
                                 level INT NOT NULL,
                                 current_exp FLOAT NOT NULL,
                                 hp FLOAT NOT NULL,
                                 max_hp FLOAT NOT NULL,
-                                soul_power FLOAT NOT NULL,
-                                max_soul_power FLOAT NOT NULL,
+                                spirit_power FLOAT NOT NULL,
+                                max_spirit_power FLOAT NOT NULL,
                                 equipped_weapon_id VARCHAR(50),
                                 inventory_json TEXT,
-                                soul_rings_count INT DEFAULT 0,
-                                skill1_name VARCHAR(100),
-                                skill2_name VARCHAR(100),
-                                has_bat_chu_mau TINYINT DEFAULT 0,
+                                breakthrough_count INT DEFAULT 0,
+                                skill_mastery_json TEXT,
+                                has_van_doc_the TINYINT DEFAULT 0,
+                                heart_demon FLOAT DEFAULT 0,
                                 realm VARCHAR(50),
                                 monsters_json TEXT,
                                 dropped_items_json TEXT,
-                                launchers_json TEXT,
-                                soul_rings_json TEXT,
+                                formations_json TEXT,
                                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                             ) ENGINE=InnoDB;";
                         cmd.ExecuteNonQuery();
+
+                        // Di cư an toàn cho bảng player_saves đã tồn tại từ phiên bản trước phần Lưu Phái
+                        // (không xóa cột skill1_id/skill2_id cũ nếu có — chỉ ngừng đọc/ghi chúng).
+                        // Dùng INFORMATION_SCHEMA thay vì "ADD COLUMN IF NOT EXISTS" vì cú pháp đó không
+                        // được mọi phiên bản MySQL/MariaDB hỗ trợ.
+                        foreach (var (column, definition) in new[]
+                        {
+                            ("class_id", "VARCHAR(50)"),
+                            ("class_element", "VARCHAR(20)"),
+                            ("skill_mastery_json", "TEXT")
+                        })
+                        {
+                            cmd.CommandText = @"
+                                SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                                WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'player_saves' AND COLUMN_NAME = @col;";
+                            cmd.Parameters.Clear();
+                            cmd.Parameters.AddWithValue("@db", DATABASE_NAME);
+                            cmd.Parameters.AddWithValue("@col", column);
+                            long exists = Convert.ToInt64(cmd.ExecuteScalar());
+
+                            if (exists == 0)
+                            {
+                                cmd.Parameters.Clear();
+                                cmd.CommandText = $"ALTER TABLE player_saves ADD COLUMN {column} {definition};";
+                                cmd.ExecuteNonQuery();
+                            }
+                        }
                     }
                 }
 
@@ -121,7 +155,7 @@ namespace SandboxTuTien.Data
         /// <summary>
         /// Di cư dữ liệu từ JSON sang MySQL (nếu có cập nhật mới).
         /// </summary>
-        public void MigrateJsonToMySql(List<ConsumableData> consumables, List<HiddenWeaponData> weapons)
+        public void MigrateJsonToMySql(List<ConsumableData> consumables, List<MagicWeaponData> weapons)
         {
             if (!IsConnected) return;
 
@@ -131,24 +165,25 @@ namespace SandboxTuTien.Data
                 {
                     conn.Open();
 
-                    // 1. Đồng bộ Consumables
+                    // 1. Đồng bộ Đan Dược / Vật Liệu
                     if (consumables != null && consumables.Count > 0)
                     {
-                        Console.WriteLine("[MySQL] Bắt đầu đồng bộ dữ liệu Consumables từ JSON...");
+                        Console.WriteLine("[MySQL] Bắt đầu đồng bộ dữ liệu Đan Dược từ JSON...");
                         int syncCount = 0;
                         foreach (var c in consumables)
                         {
                             using (var cmd = conn.CreateCommand())
                             {
                                 cmd.CommandText = @"
-                                    INSERT INTO consumables (item_id, name, type, source, tier_required, effects_json, spoilage_time)
-                                    VALUES (@id, @name, @type, @source, @tier, @effects, @spoilage)
-                                    ON DUPLICATE KEY UPDATE 
+                                    INSERT INTO consumables (item_id, name, type, source, tier_required, effects_json, crafting_recipe_json, spoilage_time)
+                                    VALUES (@id, @name, @type, @source, @tier, @effects, @recipe, @spoilage)
+                                    ON DUPLICATE KEY UPDATE
                                         name = VALUES(name),
                                         type = VALUES(type),
                                         source = VALUES(source),
                                         tier_required = VALUES(tier_required),
                                         effects_json = VALUES(effects_json),
+                                        crafting_recipe_json = VALUES(crafting_recipe_json),
                                         spoilage_time = VALUES(spoilage_time);";
                                 cmd.Parameters.AddWithValue("@id", c.ItemId);
                                 cmd.Parameters.AddWithValue("@name", c.Name);
@@ -156,29 +191,31 @@ namespace SandboxTuTien.Data
                                 cmd.Parameters.AddWithValue("@source", c.Source);
                                 cmd.Parameters.AddWithValue("@tier", c.TierRequired);
                                 cmd.Parameters.AddWithValue("@effects", JsonSerializer.Serialize(c.Effects, _jsonOptions));
+                                cmd.Parameters.AddWithValue("@recipe", JsonSerializer.Serialize(c.CraftingRecipe, _jsonOptions));
                                 cmd.Parameters.AddWithValue("@spoilage", c.SpoilageTime);
                                 cmd.ExecuteNonQuery();
                                 syncCount++;
                             }
                         }
-                        Console.WriteLine($"[MySQL] Đã đồng bộ thành công {syncCount} Consumables.");
+                        Console.WriteLine($"[MySQL] Đã đồng bộ thành công {syncCount} Đan Dược / Vật Liệu.");
                     }
 
-                    // 2. Đồng bộ Hidden Weapons
+                    // 2. Đồng bộ Pháp Khí
                     if (weapons != null && weapons.Count > 0)
                     {
-                        Console.WriteLine("[MySQL] Bắt đầu đồng bộ dữ liệu Hidden Weapons từ JSON...");
+                        Console.WriteLine("[MySQL] Bắt đầu đồng bộ dữ liệu Pháp Khí từ JSON...");
                         int syncCount = 0;
                         foreach (var w in weapons)
                         {
                             using (var cmd = conn.CreateCommand())
                             {
                                 cmd.CommandText = @"
-                                    INSERT INTO hidden_weapons (item_id, name, type, tier_required, combat_stats_json, effects_json, crafting_recipe_json)
-                                    VALUES (@id, @name, @type, @tier, @stats, @effects, @recipe)
-                                    ON DUPLICATE KEY UPDATE 
+                                    INSERT INTO magic_weapons (item_id, name, type, element, tier_required, combat_stats_json, effects_json, crafting_recipe_json)
+                                    VALUES (@id, @name, @type, @element, @tier, @stats, @effects, @recipe)
+                                    ON DUPLICATE KEY UPDATE
                                         name = VALUES(name),
                                         type = VALUES(type),
+                                        element = VALUES(element),
                                         tier_required = VALUES(tier_required),
                                         combat_stats_json = VALUES(combat_stats_json),
                                         effects_json = VALUES(effects_json),
@@ -186,6 +223,7 @@ namespace SandboxTuTien.Data
                                 cmd.Parameters.AddWithValue("@id", w.ItemId);
                                 cmd.Parameters.AddWithValue("@name", w.Name);
                                 cmd.Parameters.AddWithValue("@type", w.Type);
+                                cmd.Parameters.AddWithValue("@element", w.Element);
                                 cmd.Parameters.AddWithValue("@tier", w.TierRequired);
                                 cmd.Parameters.AddWithValue("@stats", w.CombatStats != null ? JsonSerializer.Serialize(w.CombatStats, _jsonOptions) : null);
                                 cmd.Parameters.AddWithValue("@effects", JsonSerializer.Serialize(w.Effects, _jsonOptions));
@@ -194,7 +232,7 @@ namespace SandboxTuTien.Data
                                 syncCount++;
                             }
                         }
-                        Console.WriteLine($"[MySQL] Đã đồng bộ thành công {syncCount} Hidden Weapons.");
+                        Console.WriteLine($"[MySQL] Đã đồng bộ thành công {syncCount} Pháp Khí.");
                     }
                 }
             }
@@ -205,7 +243,7 @@ namespace SandboxTuTien.Data
         }
 
         /// <summary>
-        /// Tải danh sách Consumables trực tiếp từ MySQL.
+        /// Tải danh sách Đan Dược / Vật Liệu trực tiếp từ MySQL.
         /// </summary>
         public List<ConsumableData> LoadConsumablesFromDb()
         {
@@ -219,7 +257,7 @@ namespace SandboxTuTien.Data
                     conn.Open();
                     using (var cmd = conn.CreateCommand())
                     {
-                        cmd.CommandText = "SELECT item_id, name, type, source, tier_required, effects_json, spoilage_time FROM consumables;";
+                        cmd.CommandText = "SELECT item_id, name, type, source, tier_required, effects_json, crafting_recipe_json, spoilage_time FROM consumables;";
                         using (var reader = cmd.ExecuteReader())
                         {
                             while (reader.Read())
@@ -231,62 +269,8 @@ namespace SandboxTuTien.Data
                                     Type = reader.GetString(2),
                                     Source = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
                                     TierRequired = reader.GetInt32(4),
-                                    SpoilageTime = reader.GetInt32(6)
+                                    SpoilageTime = reader.GetInt32(7)
                                 };
-
-                                string effectsJson = reader.IsDBNull(5) ? string.Empty : reader.GetString(5);
-                                if (!string.IsNullOrEmpty(effectsJson))
-                                {
-                                    item.Effects = JsonSerializer.Deserialize<List<ItemEffect>>(effectsJson, _jsonOptions) ?? new();
-                                }
-
-                                list.Add(item);
-                            }
-                        }
-                    }
-                }
-                Console.WriteLine($"[MySQL] Đã nạp {list.Count} Consumables từ MySQL DB.");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[MySQL] Lỗi nạp Consumables: {ex.Message}");
-            }
-            return list;
-        }
-
-        /// <summary>
-        /// Tải danh sách Hidden Weapons trực tiếp từ MySQL.
-        /// </summary>
-        public List<HiddenWeaponData> LoadHiddenWeaponsFromDb()
-        {
-            var list = new List<HiddenWeaponData>();
-            if (!IsConnected) return list;
-
-            try
-            {
-                using (var conn = new MySqlConnection(_connectionString))
-                {
-                    conn.Open();
-                    using (var cmd = conn.CreateCommand())
-                    {
-                        cmd.CommandText = "SELECT item_id, name, type, tier_required, combat_stats_json, effects_json, crafting_recipe_json FROM hidden_weapons;";
-                        using (var reader = cmd.ExecuteReader())
-                        {
-                            while (reader.Read())
-                            {
-                                var item = new HiddenWeaponData
-                                {
-                                    ItemId = reader.GetString(0),
-                                    Name = reader.GetString(1),
-                                    Type = reader.GetString(2),
-                                    TierRequired = reader.GetInt32(3)
-                                };
-
-                                string statsJson = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
-                                if (!string.IsNullOrEmpty(statsJson))
-                                {
-                                    item.CombatStats = JsonSerializer.Deserialize<CombatStats>(statsJson, _jsonOptions);
-                                }
 
                                 string effectsJson = reader.IsDBNull(5) ? string.Empty : reader.GetString(5);
                                 if (!string.IsNullOrEmpty(effectsJson))
@@ -305,11 +289,72 @@ namespace SandboxTuTien.Data
                         }
                     }
                 }
-                Console.WriteLine($"[MySQL] Đã nạp {list.Count} Hidden Weapons từ MySQL DB.");
+                Console.WriteLine($"[MySQL] Đã nạp {list.Count} Đan Dược / Vật Liệu từ MySQL DB.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[MySQL] Lỗi nạp Hidden Weapons: {ex.Message}");
+                Console.WriteLine($"[MySQL] Lỗi nạp Đan Dược: {ex.Message}");
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// Tải danh sách Pháp Khí trực tiếp từ MySQL.
+        /// </summary>
+        public List<MagicWeaponData> LoadMagicWeaponsFromDb()
+        {
+            var list = new List<MagicWeaponData>();
+            if (!IsConnected) return list;
+
+            try
+            {
+                using (var conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = "SELECT item_id, name, type, element, tier_required, combat_stats_json, effects_json, crafting_recipe_json FROM magic_weapons;";
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                var item = new MagicWeaponData
+                                {
+                                    ItemId = reader.GetString(0),
+                                    Name = reader.GetString(1),
+                                    Type = reader.GetString(2),
+                                    Element = reader.IsDBNull(3) ? "None" : reader.GetString(3),
+                                    TierRequired = reader.GetInt32(4)
+                                };
+
+                                string statsJson = reader.IsDBNull(5) ? string.Empty : reader.GetString(5);
+                                if (!string.IsNullOrEmpty(statsJson))
+                                {
+                                    item.CombatStats = JsonSerializer.Deserialize<CombatStats>(statsJson, _jsonOptions);
+                                }
+
+                                string effectsJson = reader.IsDBNull(6) ? string.Empty : reader.GetString(6);
+                                if (!string.IsNullOrEmpty(effectsJson))
+                                {
+                                    item.Effects = JsonSerializer.Deserialize<List<ItemEffect>>(effectsJson, _jsonOptions) ?? new();
+                                }
+
+                                string recipeJson = reader.IsDBNull(7) ? string.Empty : reader.GetString(7);
+                                if (!string.IsNullOrEmpty(recipeJson))
+                                {
+                                    item.CraftingRecipe = JsonSerializer.Deserialize<List<CraftingIngredient>>(recipeJson, _jsonOptions) ?? new();
+                                }
+
+                                list.Add(item);
+                            }
+                        }
+                    }
+                }
+                Console.WriteLine($"[MySQL] Đã nạp {list.Count} Pháp Khí từ MySQL DB.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[MySQL] Lỗi nạp Pháp Khí: {ex.Message}");
             }
             return list;
         }
@@ -318,11 +363,11 @@ namespace SandboxTuTien.Data
         /// Lưu trạng thái người chơi và toàn bộ thế giới vào MySQL.
         /// </summary>
         public bool SavePlayerState(
-            Player player, 
+            Player player,
+            SkillLoadoutComponent loadout,
             List<Monster> monsters,
             List<DroppedItem> droppedItems,
-            List<AutoLauncher> launchers,
-            List<SoulRingEntity> soulRings,
+            List<FormationArray> formations,
             string saveSlot = "slot_default")
         {
             if (!IsConnected) return false;
@@ -332,7 +377,7 @@ namespace SandboxTuTien.Data
                 var cult = player.Cultivation;
                 string inventoryJson = player.Inventory.Serialize();
 
-                // 1. Tuần tự hóa danh sách Quái vật
+                // 1. Tuần tự hóa danh sách Yêu Thú
                 var monstersData = new List<object>();
                 foreach (var m in monsters)
                 {
@@ -371,40 +416,23 @@ namespace SandboxTuTien.Data
                 }
                 string droppedItemsJson = JsonSerializer.Serialize(droppedItemsData);
 
-                // 3. Tuần tự hóa danh sách bệ phóng
-                var launchersData = new List<object>();
-                foreach (var l in launchers)
+                // 3. Tuần tự hóa danh sách trận pháp
+                var formationsData = new List<object>();
+                foreach (var f in formations)
                 {
-                    if (l.Active)
+                    if (f.Active)
                     {
-                        launchersData.Add(new
+                        formationsData.Add(new
                         {
-                            type = l.TurretType,
-                            ammo = l.AmmoCount,
-                            maxAmmo = l.MaxAmmo,
-                            x = l.Position.X,
-                            y = l.Position.Y
+                            type = f.FormationType,
+                            ammo = f.AmmoCount,
+                            maxAmmo = f.MaxAmmo,
+                            x = f.Position.X,
+                            y = f.Position.Y
                         });
                     }
                 }
-                string launchersJson = JsonSerializer.Serialize(launchersData);
-
-                // 4. Tuần tự hóa danh sách hồn hoàn rơi dưới đất
-                var soulRingsData = new List<object>();
-                foreach (var r in soulRings)
-                {
-                    if (r.Active)
-                    {
-                        soulRingsData.Add(new
-                        {
-                            age = r.Age,
-                            element = r.Element.ToString(),
-                            x = r.Position.X,
-                            y = r.Position.Y
-                        });
-                    }
-                }
-                string soulRingsJson = JsonSerializer.Serialize(soulRingsData);
+                string formationsJson = JsonSerializer.Serialize(formationsData);
 
                 using (var conn = new MySqlConnection(_connectionString))
                 {
@@ -412,52 +440,54 @@ namespace SandboxTuTien.Data
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = @"
-                            INSERT INTO player_saves (save_slot, player_name, level, current_exp, hp, max_hp, soul_power, max_soul_power, equipped_weapon_id, inventory_json, soul_rings_count, skill1_name, skill2_name, has_bat_chu_mau, realm, monsters_json, dropped_items_json, launchers_json, soul_rings_json)
-                            VALUES (@slot, @name, @level, @exp, @hp, @maxHp, @sp, @maxSp, @weapon, @inventory, @ringsCount, @skill1, @skill2, @bat_chu_mau, @realm, @monsters, @droppedItems, @launchers, @soulRings)
-                            ON DUPLICATE KEY UPDATE 
+                            INSERT INTO player_saves (save_slot, player_name, class_id, class_element, level, current_exp, hp, max_hp, spirit_power, max_spirit_power, equipped_weapon_id, inventory_json, breakthrough_count, skill_mastery_json, has_van_doc_the, heart_demon, realm, monsters_json, dropped_items_json, formations_json)
+                            VALUES (@slot, @name, @classId, @classElement, @level, @exp, @hp, @maxHp, @sp, @maxSp, @weapon, @inventory, @breakthroughs, @mastery, @vanDocThe, @heartDemon, @realm, @monsters, @droppedItems, @formations)
+                            ON DUPLICATE KEY UPDATE
                                 player_name = VALUES(player_name),
+                                class_id = VALUES(class_id),
+                                class_element = VALUES(class_element),
                                 level = VALUES(level),
                                 current_exp = VALUES(current_exp),
                                 hp = VALUES(hp),
                                 max_hp = VALUES(max_hp),
-                                soul_power = VALUES(soul_power),
-                                max_soul_power = VALUES(max_soul_power),
+                                spirit_power = VALUES(spirit_power),
+                                max_spirit_power = VALUES(max_spirit_power),
                                 equipped_weapon_id = VALUES(equipped_weapon_id),
                                 inventory_json = VALUES(inventory_json),
-                                soul_rings_count = VALUES(soul_rings_count),
-                                skill1_name = VALUES(skill1_name),
-                                skill2_name = VALUES(skill2_name),
-                                has_bat_chu_mau = VALUES(has_bat_chu_mau),
+                                breakthrough_count = VALUES(breakthrough_count),
+                                skill_mastery_json = VALUES(skill_mastery_json),
+                                has_van_doc_the = VALUES(has_van_doc_the),
+                                heart_demon = VALUES(heart_demon),
                                 realm = VALUES(realm),
                                 monsters_json = VALUES(monsters_json),
                                 dropped_items_json = VALUES(dropped_items_json),
-                                launchers_json = VALUES(launchers_json),
-                                soul_rings_json = VALUES(soul_rings_json);";
+                                formations_json = VALUES(formations_json);";
 
                         cmd.Parameters.AddWithValue("@slot", saveSlot);
                         cmd.Parameters.AddWithValue("@name", player.Name);
+                        cmd.Parameters.AddWithValue("@classId", loadout.PlayerClass.Id);
+                        cmd.Parameters.AddWithValue("@classElement", loadout.ChosenElement.ToString());
                         cmd.Parameters.AddWithValue("@level", cult.CurrentLevel);
                         cmd.Parameters.AddWithValue("@exp", cult.CurrentExp);
                         cmd.Parameters.AddWithValue("@hp", cult.HP);
                         cmd.Parameters.AddWithValue("@maxHp", cult.MaxHP);
-                        cmd.Parameters.AddWithValue("@sp", cult.SoulPower);
-                        cmd.Parameters.AddWithValue("@maxSp", cult.MaxSoulPower);
+                        cmd.Parameters.AddWithValue("@sp", cult.SpiritPower);
+                        cmd.Parameters.AddWithValue("@maxSp", cult.MaxSpiritPower);
                         cmd.Parameters.AddWithValue("@weapon", player.Inventory.EquippedWeapon?.ItemId ?? string.Empty);
                         cmd.Parameters.AddWithValue("@inventory", inventoryJson);
-                        cmd.Parameters.AddWithValue("@ringsCount", cult.SoulRingsCount);
-                        cmd.Parameters.AddWithValue("@skill1", cult.Skill1?.Name ?? string.Empty);
-                        cmd.Parameters.AddWithValue("@skill2", cult.Skill2?.Name ?? string.Empty);
-                        cmd.Parameters.AddWithValue("@bat_chu_mau", cult.HasBatChuMau ? 1 : 0);
+                        cmd.Parameters.AddWithValue("@breakthroughs", cult.BreakthroughCount);
+                        cmd.Parameters.AddWithValue("@mastery", loadout.SerializeMastery());
+                        cmd.Parameters.AddWithValue("@vanDocThe", cult.HasVanDocThe ? 1 : 0);
+                        cmd.Parameters.AddWithValue("@heartDemon", cult.HeartDemon);
                         cmd.Parameters.AddWithValue("@realm", cult.CurrentRealm.ToString());
                         cmd.Parameters.AddWithValue("@monsters", monstersJson);
                         cmd.Parameters.AddWithValue("@droppedItems", droppedItemsJson);
-                        cmd.Parameters.AddWithValue("@launchers", launchersJson);
-                        cmd.Parameters.AddWithValue("@soulRings", soulRingsJson);
+                        cmd.Parameters.AddWithValue("@formations", formationsJson);
 
                         cmd.ExecuteNonQuery();
                     }
                 }
-                Console.WriteLine($"[MySQL] Đã lưu trạng thái game & thế giới thành công vào MySQL (Slot: {saveSlot})!");
+                Console.WriteLine($"[MySQL] Đã lưu trạng thái game & thế giới thành công (Slot: {saveSlot})!");
                 return true;
             }
             catch (Exception ex)
@@ -471,18 +501,17 @@ namespace SandboxTuTien.Data
         /// Tải trạng thái người chơi và thế giới từ MySQL.
         /// </summary>
         public bool LoadPlayerState(
-            Player player, 
+            Player player,
+            SkillLoadoutComponent loadout,
             DataLoader loader,
             out string monstersJson,
             out string droppedItemsJson,
-            out string launchersJson,
-            out string soulRingsJson,
+            out string formationsJson,
             string saveSlot = "slot_default")
         {
             monstersJson = string.Empty;
             droppedItemsJson = string.Empty;
-            launchersJson = string.Empty;
-            soulRingsJson = string.Empty;
+            formationsJson = string.Empty;
 
             if (!IsConnected) return false;
 
@@ -494,8 +523,8 @@ namespace SandboxTuTien.Data
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = @"
-                            SELECT player_name, level, current_exp, hp, max_hp, soul_power, max_soul_power, equipped_weapon_id, inventory_json, soul_rings_count, skill1_name, skill2_name, has_bat_chu_mau, realm, monsters_json, dropped_items_json, launchers_json, soul_rings_json
-                            FROM player_saves 
+                            SELECT player_name, class_id, class_element, level, current_exp, hp, max_hp, spirit_power, max_spirit_power, equipped_weapon_id, inventory_json, breakthrough_count, skill_mastery_json, has_van_doc_the, heart_demon, realm, monsters_json, dropped_items_json, formations_json
+                            FROM player_saves
                             WHERE save_slot = @slot;";
                         cmd.Parameters.AddWithValue("@slot", saveSlot);
 
@@ -504,28 +533,39 @@ namespace SandboxTuTien.Data
                             if (reader.Read())
                             {
                                 string name = reader.GetString(0);
-                                int level = reader.GetInt32(1);
-                                float exp = reader.GetFloat(2);
-                                float hp = reader.GetFloat(3);
-                                float maxHp = reader.GetFloat(4);
-                                float sp = reader.GetFloat(5);
-                                float maxSp = reader.GetFloat(6);
-                                string weaponId = reader.IsDBNull(7) ? string.Empty : reader.GetString(7);
-                                string inventoryJson = reader.IsDBNull(8) ? string.Empty : reader.GetString(8);
-                                int ringsCount = reader.GetInt32(9);
-                                string skill1Name = reader.IsDBNull(10) ? string.Empty : reader.GetString(10);
-                                string skill2Name = reader.IsDBNull(11) ? string.Empty : reader.GetString(11);
-                                bool hasBatChuMau = reader.GetByte(12) == 1;
-                                string realmStr = reader.GetString(13);
+                                string savedClassId = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+                                int level = reader.GetInt32(3);
+                                float exp = reader.GetFloat(4);
+                                float hp = reader.GetFloat(5);
+                                float maxHp = reader.GetFloat(6);
+                                float sp = reader.GetFloat(7);
+                                float maxSp = reader.GetFloat(8);
+                                string weaponId = reader.IsDBNull(9) ? string.Empty : reader.GetString(9);
+                                string inventoryJson = reader.IsDBNull(10) ? string.Empty : reader.GetString(10);
+                                int breakthroughCount = reader.GetInt32(11);
+                                string masteryJson = reader.IsDBNull(12) ? string.Empty : reader.GetString(12);
+                                bool hasVanDocThe = reader.GetByte(13) == 1;
+                                float heartDemon = reader.IsDBNull(14) ? 0f : reader.GetFloat(14);
+                                string realmStr = reader.IsDBNull(15) ? string.Empty : reader.GetString(15);
 
-                                monstersJson = reader.IsDBNull(14) ? string.Empty : reader.GetString(14);
-                                droppedItemsJson = reader.IsDBNull(15) ? string.Empty : reader.GetString(15);
-                                launchersJson = reader.IsDBNull(16) ? string.Empty : reader.GetString(16);
-                                soulRingsJson = reader.IsDBNull(17) ? string.Empty : reader.GetString(17);
+                                monstersJson = reader.IsDBNull(16) ? string.Empty : reader.GetString(16);
+                                droppedItemsJson = reader.IsDBNull(17) ? string.Empty : reader.GetString(17);
+                                formationsJson = reader.IsDBNull(18) ? string.Empty : reader.GetString(18);
 
-                                // Phục hồi các chỉ số tu vi thông qua LoadState
-                                var cult = player.Cultivation;
-                                cult.LoadState(level, exp, hp, maxHp, sp, maxSp, ringsCount, hasBatChuMau, realmStr, skill1Name, skill2Name);
+                                // Nếu bản lưu thuộc lưu phái khác lưu phái đang chơi (F9 chỉ nạp lại trong cùng
+                                // phiên chơi, chưa hỗ trợ "tiếp tục" từ màn hình chọn lưu phái), chỉ cảnh báo.
+                                if (!string.IsNullOrEmpty(savedClassId) && savedClassId != loadout.PlayerClass.Id)
+                                {
+                                    Console.WriteLine($"[MySQL] CẢNH BÁO: Bản lưu thuộc lưu phái '{savedClassId}', " +
+                                                      $"khác lưu phái đang chơi '{loadout.PlayerClass.Id}'. Vẫn nạp chỉ số/thông thạo.");
+                                }
+
+                                // Phục hồi tu vi
+                                player.Cultivation.LoadState(level, exp, hp, maxHp, sp, maxSp, breakthroughCount,
+                                                             hasVanDocThe, heartDemon, realmStr);
+
+                                // Phục hồi độ thông thạo chiêu thức
+                                loadout.LoadMastery(masteryJson);
 
                                 // Phục hồi túi đồ
                                 if (!string.IsNullOrEmpty(inventoryJson))
@@ -533,7 +573,7 @@ namespace SandboxTuTien.Data
                                     player.Inventory.Deserialize(inventoryJson, loader);
                                 }
 
-                                // Phục hồi trang bị vũ khí
+                                // Phục hồi Pháp Khí đang trang bị
                                 if (!string.IsNullOrEmpty(weaponId))
                                 {
                                     player.Inventory.EquipWeapon(weaponId);

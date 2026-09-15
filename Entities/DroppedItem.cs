@@ -10,7 +10,7 @@ namespace SandboxTuTien.Entities
         public Vector2 Position { get; set; }
         public string ItemId { get; set; }
         public string Name { get; set; }
-        public string Type { get; set; } // CONSUMABLE hoặc HIDDEN_WEAPON
+        public string Type { get; set; } // CONSUMABLE hoặc MAGIC_WEAPON
         public int Quantity { get; set; }
         public bool Active { get; set; }
         public float HoverTimer { get; set; }

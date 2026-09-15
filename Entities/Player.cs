@@ -1,25 +1,27 @@
 using SandboxTuTien.Components;
 using SandboxTuTien.Core;
+using SandboxTuTien.Core.Combat;
 
 namespace SandboxTuTien.Entities
 {
     /// <summary>
     /// Thực thể Player — chỉ chứa data, không có logic render.
     /// Theo Component-Based Architecture: Player là một "entity" rỗng
-    /// được gắn các Component (CultivationComponent, InventoryComponent, v.v.).
-    ///
-    /// Placeholder cho vị trí, inventory sẽ được mở rộng sau.
+    /// được gắn các Component (CultivationComponent, InventoryComponent, SkillLoadoutComponent, v.v.).
     /// </summary>
     public class Player
     {
-        /// <summary>Tên nhân vật.</summary>
+        /// <summary>Đạo hiệu nhân vật.</summary>
         public string Name { get; set; }
 
-        /// <summary>Component tu luyện — quản lý Hồn Lực, cảnh giới, đột phá.</summary>
+        /// <summary>Component tu luyện — quản lý tu vi, cảnh giới, đột phá.</summary>
         public CultivationComponent Cultivation { get; set; }
 
-        /// <summary>Túi đồ của người chơi.</summary>
+        /// <summary>Túi trữ vật của người chơi.</summary>
         public InventoryComponent Inventory { get; set; }
+
+        /// <summary>Hiệu ứng trạng thái trên người chơi (khiên, giảm sát thương, phản đòn, tăng tốc... từ chiêu self_buff/dash).</summary>
+        public StatusEffectComponent StatusEffects { get; } = new();
 
         // ====================================================================
         // VỊ TRÍ (Position 2D thực tế cho di chuyển và ngắm bắn)
@@ -40,17 +42,27 @@ namespace SandboxTuTien.Entities
 
         /// <summary>
         /// Tạo Player mới với CultivationComponent và InventoryComponent.
+        /// SkillLoadoutComponent được Game1 gắn riêng sau khi biết lưu phái đã chọn.
         /// </summary>
-        /// <param name="name">Tên nhân vật.</param>
+        /// <param name="name">Đạo hiệu nhân vật.</param>
         /// <param name="eventManager">EventBus trung tâm.</param>
-        /// <param name="innateLevel">Cấp Tiên Thiên Hồn Lực (0-10).</param>
-        /// <param name="innateMultiplier">Hệ số tu luyện (0.0-2.0).</param>
-        public Player(string name, EventManager eventManager,
-                      int innateLevel = 1, float innateMultiplier = 1.0f)
+        /// <param name="innateLevel">Tầng tu vi ban đầu (0-10).</param>
+        /// <param name="spiritRootMultiplier">Phẩm chất Linh Căn (0.0-2.0).</param>
+        /// <param name="spiritRootElement">Hệ Linh Căn.</param>
+        /// <param name="hpMultiplier">Hệ số nhân HP tối đa theo lưu phái.</param>
+        /// <param name="spiritPowerMultiplier">Hệ số nhân Linh Lực tối đa theo lưu phái.</param>
+        /// <param name="moveSpeedMultiplier">Hệ số nhân tốc độ di chuyển theo lưu phái.</param>
+        /// <param name="spiritPowerRegenMultiplier">Hệ số nhân tốc độ hồi Linh Lực tự nhiên theo lưu phái.</param>
+        public Player(string name, EventManager eventManager, int innateLevel = 1, float spiritRootMultiplier = 1.0f,
+                      Element spiritRootElement = Element.None, float hpMultiplier = 1f,
+                      float spiritPowerMultiplier = 1f, float moveSpeedMultiplier = 1f,
+                      float spiritPowerRegenMultiplier = 1f)
         {
             Name = name;
 
-            Cultivation = new CultivationComponent(eventManager, innateLevel, innateMultiplier)
+            Cultivation = new CultivationComponent(eventManager, innateLevel, spiritRootMultiplier,
+                                                   spiritRootElement, hpMultiplier, spiritPowerMultiplier,
+                                                   moveSpeedMultiplier, spiritPowerRegenMultiplier)
             {
                 OwnerName = name
             };
