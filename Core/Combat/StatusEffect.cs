@@ -17,6 +17,7 @@ namespace SandboxTuTien.Core.Combat
         Shield,          // Hộ thuẫn: hấp thụ sát thương bằng Value
         AttackUp,        // Tăng công theo Value
         DefenseUp,       // Tăng thủ theo Value
+        DefenseDown,     // Giảm thủ theo Value (VD: Kiếm Tâm Phá Giáp)
         SpeedUp,         // Tăng tốc theo Value
         DamageReduction  // Giảm sát thương nhận vào theo Value
     }
@@ -70,6 +71,7 @@ namespace SandboxTuTien.Core.Combat
                 StatusType.Shield => "Hộ thuẫn",
                 StatusType.AttackUp => "Tăng công",
                 StatusType.DefenseUp => "Tăng thủ",
+                StatusType.DefenseDown => "Giảm thủ",
                 StatusType.SpeedUp => "Tăng tốc",
                 StatusType.DamageReduction => "Giảm sát thương",
                 _ => type.ToString()

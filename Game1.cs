@@ -1615,6 +1615,24 @@ public class Game1 : Game
         }
 
         BuildRecipes();
+
+        // Nạp dữ liệu Lưu Phái / Chiêu Thức (chưa nối vào lối chơi — kiểm tra tính toàn vẹn tham chiếu ngay
+        // lúc khởi động để bắt lỗi đánh máy trong JSON sớm, trước khi màn hình chọn lưu phái được thêm vào).
+        var classes = _dataLoader.LoadClasses();
+        var skills = _dataLoader.LoadSkills();
+        var classDataErrors = GameDataValidator.Validate(classes, skills);
+        if (classDataErrors.Count == 0)
+        {
+            Console.WriteLine($"[Lưu Phái] Đã nạp {classes.Count} lưu phái, {skills.Count} chiêu thức — dữ liệu hợp lệ.");
+        }
+        else
+        {
+            Console.WriteLine($"[Lưu Phái] CẢNH BÁO: {classDataErrors.Count} lỗi dữ liệu trong classes.json/skills.json:");
+            foreach (var error in classDataErrors)
+            {
+                Console.WriteLine($"           - {error}");
+            }
+        }
     }
 
     /// <summary>Gom công thức từ Pháp Khí và Đan Dược có crafting_recipe (data-driven).</summary>
