@@ -86,15 +86,52 @@ public class LightningStrike
 }
 
 /// <summary>
+/// Một đòn "ground_aoe" đang chờ: hiện vòng báo hiệu tại vị trí, sau Delay giây thì gây sát thương
+/// + đẩy lùi mọi Yêu Thú trong bán kính. Dùng chung cho mọi chiêu kiểu ground_aoe (Hỏa Cầu Thuật,
+/// Băng Phong Kết Giới, Bá Vương Chấn Địa, Lôi Phù...).
+/// </summary>
+public class PendingGroundEffect
+{
+    public Vector2 Position;
+    public float Delay;
+    public readonly float OriginalDelay;
+    public float Radius;
+    public float Damage;
+    public float Knockback;
+    public Element Element;
+    public IReadOnlyList<OnHitEffect> OnHitEffects;
+    public bool Resolved;
+
+    public PendingGroundEffect(Vector2 position, float delay, float radius, float damage, float knockback,
+                               Element element, IReadOnlyList<OnHitEffect> onHitEffects)
+    {
+        Position = position;
+        Delay = delay;
+        OriginalDelay = delay;
+        Radius = radius;
+        Damage = damage;
+        Knockback = knockback;
+        Element = element;
+        OnHitEffects = onHitEffects;
+    }
+}
+
+/// <summary>
 /// Game1 — Điểm tích hợp giao diện đồ họa và tất cả các hệ thống.
 /// </summary>
 public class Game1 : Game
 {
     private const string PLAYER_NAME = "Lâm Phong";
-    private const int MAX_FORMATIONS = 3;
+    private const int MAX_FORMATIONS_DEFAULT = 3;
+    private const int MAX_FORMATIONS_TRAN_DAO = 5; // Trận Đạo Tinh Thông (Phù Trận Sư)
     private const string SPIRIT_STONE_ID = "linh_thach";
     private const float BASE_MOVE_SPEED = 180f;
     private const float DASH_IMPACT_RADIUS = 60f;
+    private const float THE_TU_DAMAGE_REDUCTION = 0.2f;     // Đồng Bì Thiết Cốt
+    private const float THE_TU_TRIBULATION_REDUCTION = 0.3f; // Đồng Bì Thiết Cốt, riêng lôi kiếp
+    private const float THE_TU_LIFESTEAL = 0.08f;            // Khí Huyết Cuồn Cuộn
+    private const float PHU_TRAN_SU_FREE_CAST_CHANCE = 0.15f; // Phù Lục Tiết Kiệm
+    private const float PHAP_TU_SP_REGEN_MULTIPLIER = 1.5f;   // Linh Hải
 
     private static readonly Element[] PhapTuElements = { Element.Fire, Element.Wood, Element.Ice };
 
@@ -163,6 +200,7 @@ public class Game1 : Game
     private readonly List<FloatingText> _floatingTexts = new();
     private readonly List<FormationArray> _formations = new();
     private readonly List<LightningStrike> _lightningStrikes = new();
+    private readonly List<PendingGroundEffect> _pendingGroundEffects = new();
     private readonly List<Particle> _particles = new();
     private ConsumableSpawner _alchemistSpawner = null!;
     private ConsumableSpawner _forgeSpawner = null!;
@@ -211,6 +249,12 @@ public class Game1 : Game
 
     /// <summary>Bộ chiêu unlocked ở lần kiểm tra gần nhất, dùng để phát hiện chiêu mới lĩnh ngộ khi lên cảnh giới.</summary>
     private readonly HashSet<string> _previouslyUnlockedSkillIds = new();
+
+    // ========================================================================
+    // NỘI TẠI CÁC LƯU PHÁI KHÁC (cờ bật theo lưu phái đã chọn, đặt trong StartNewGame)
+    // ========================================================================
+    private int _maxFormations = MAX_FORMATIONS_DEFAULT;
+    private bool _theTuPassivesActive = false;   // Đồng Bì Thiết Cốt + Khí Huyết Cuồn Cuộn
 
     public Game1()
     {
@@ -273,6 +317,7 @@ public class Game1 : Game
         bool isPhapTu = chosenClass.HasElementalSkills;
         float spiritRootMultiplier = isPhapTu ? 2.0f : 1.2f; // Pháp Tu: Thiên Linh Căn; còn lại: Chân Linh Căn
         Element spiritRootElement = isPhapTu ? chosenElement : Element.None;
+        bool hasLinhHai = chosenClass.Passives.Any(p => p.Id == "linh_hai");
 
         _player = new Player(
             name: PLAYER_NAME,
@@ -282,7 +327,8 @@ public class Game1 : Game
             spiritRootElement: spiritRootElement,
             hpMultiplier: chosenClass.StatMultipliers.HP,
             spiritPowerMultiplier: chosenClass.StatMultipliers.SpiritPower,
-            moveSpeedMultiplier: chosenClass.StatMultipliers.Speed
+            moveSpeedMultiplier: chosenClass.StatMultipliers.Speed,
+            spiritPowerRegenMultiplier: hasLinhHai ? PHAP_TU_SP_REGEN_MULTIPLIER : 1f
         );
         _cultivationSystem.RegisterComponent(_player.Cultivation);
 
@@ -299,6 +345,18 @@ public class Game1 : Game
         _combatSystem.PlayerCritChance = chosenClass.Passives.Any(p => p.Id == "kiem_tam_thong_minh") ? 0.15f : 0f;
         _kiemYStacks = 0;
         _kiemYTimer = 0f;
+
+        // Nội tại: Đồng Bì Thiết Cốt + Khí Huyết Cuồn Cuộn (Thể Tu)
+        _theTuPassivesActive = chosenClass.Passives.Any(p => p.Id == "dong_bi_thiet_cot");
+
+        // Nội tại: Trận Đạo Tinh Thông (Phù Trận Sư, tối đa 5 trận thay vì 3)
+        _maxFormations = GetMaxFormationsForClass(chosenClass);
+
+        // Nội tại: Phù Lục Tiết Kiệm (Phù Trận Sư, 15% cơ hội thi triển không tốn Linh Lực)
+        _skillSystem.FreeCastChance = chosenClass.Passives.Any(p => p.Id == "phu_luc_tiet_kiem") ? PHU_TRAN_SU_FREE_CAST_CHANCE : 0f;
+
+        _player.StatusEffects.Clear();
+        _pendingGroundEffects.Clear();
 
         // Cấp phát túi đồ mặc định
         GiveInitialInventoryItems();
@@ -635,6 +693,13 @@ public class Game1 : Game
             }
         }
 
+        // Hiệu ứng trạng thái trên người chơi (khiên/giảm sát thương/tăng tốc từ chiêu self_buff/dash)
+        float playerStatusDot = _player.StatusEffects.Update(deltaTime, _player.Cultivation.MaxHP);
+        if (playerStatusDot > 0f)
+        {
+            _player.Cultivation.Heal(-MitigatePlayerDamage(playerStatusDot));
+        }
+
         // Sát thương va chạm Yêu Thú (4 HP mỗi 0.5 giây cho mỗi con)
         var state = _player.Cultivation.CurrentState;
         if (state != CultivationState.Dead && state != CultivationState.Breakthrough)
@@ -644,27 +709,39 @@ public class Game1 : Game
             {
                 _contactDamageTimer = 0f;
                 float totalContactDmg = 0f;
+                var contactingMonsters = new List<Monster>();
                 foreach (var monster in _monsters)
                 {
                     if (monster.Active && monster.CheckCollision(playerPos, 12f))
                     {
                         totalContactDmg += 4f;
+                        contactingMonsters.Add(monster);
                     }
                 }
                 if (totalContactDmg > 0f)
                 {
-                    _player.Cultivation.Heal(-totalContactDmg);
+                    _player.Cultivation.Heal(-MitigatePlayerDamage(totalContactDmg));
+
+                    float reflectPercent = _player.StatusEffects.GetValue(StatusType.DamageReflect);
+                    if (reflectPercent > 0f)
+                    {
+                        foreach (var monster in contactingMonsters)
+                        {
+                            _combatSystem.ApplyHit(monster, 4f * reflectPercent, Element.None, true, null, ProjectileOwner.Player, monster.Position);
+                        }
+                    }
                 }
             }
         }
 
-        // Hệ thống hạt, rung màn hình, lôi kiếp
+        // Hệ thống hạt, rung màn hình, lôi kiếp, đòn xuống đất đang chờ
         UpdateParticles(deltaTime);
         UpdateScreenshake(deltaTime);
         UpdateProjectileTrails();
         UpdateMeditationVFX();
         UpdateBreakthroughVFX();
         UpdateLightningStrikes(deltaTime);
+        UpdatePendingGroundEffects(deltaTime);
 
         // Cập nhật chữ nổi
         for (int i = _floatingTexts.Count - 1; i >= 0; i--)
@@ -682,7 +759,8 @@ public class Game1 : Game
             _kiemYTimer -= deltaTime;
             if (_kiemYTimer <= 0f) _kiemYStacks = 0;
         }
-        _combatSystem.PlayerDamageMultiplier = 1f + _kiemYStacks * KIEM_Y_PER_STACK;
+        float attackBuff = _player.StatusEffects.GetValue(StatusType.AttackUp);
+        _combatSystem.PlayerDamageMultiplier = (1f + _kiemYStacks * KIEM_Y_PER_STACK) * (1f + attackBuff);
 
         // Vùng hiệu ứng (chiêu kiểu "zone": mưa kiếm, vùng độc, vùng hồi máu...)
         _zoneSystem.Update(deltaTime, playerPos, _player.Cultivation.MaxHP, out float zoneHeal);
@@ -767,6 +845,15 @@ public class Game1 : Game
             float progress = 1f - Math.Clamp(strike.Delay / CultivationComponent.LIGHTNING_STRIKE_DELAY, 0f, 1f);
             _spriteBatch.Draw(_ringTexture, strike.Position, null, Color.Red * (0.25f + 0.55f * progress),
                               0f, ringOrigin, strike.Radius / ringOrigin.X, SpriteEffects.None, 0f);
+        }
+
+        // 1.1. Vòng báo hiệu đòn "ground_aoe" (Hỏa Cầu Thuật, Băng Phong Kết Giới, Lôi Phù, Bá Vương Chấn Địa...)
+        foreach (var effect in _pendingGroundEffects)
+        {
+            if (effect.Resolved) continue;
+            float progress = 1f - Math.Clamp(effect.Delay / effect.OriginalDelay, 0f, 1f);
+            _spriteBatch.Draw(_ringTexture, effect.Position, null, Color.OrangeRed * (0.3f + 0.4f * progress),
+                              0f, ringOrigin, effect.Radius / ringOrigin.X, SpriteEffects.None, 0f);
         }
 
         // 1.2. Vùng hiệu ứng đang hoạt động (chiêu kiểu "zone")
@@ -999,7 +1086,7 @@ public class Game1 : Game
             (cult.CurrentState == CultivationState.Breakthrough && !dodgingTribulation))
             return;
 
-        float speed = BASE_MOVE_SPEED * cult.MoveSpeedMultiplier;
+        float speed = BASE_MOVE_SPEED * cult.MoveSpeedMultiplier * _player.StatusEffects.SpeedMultiplier;
         Vector2 dir = Vector2.Zero;
 
         if (keys.IsKeyDown(Keys.W) || keys.IsKeyDown(Keys.Up)) dir.Y -= 1f;
@@ -1253,6 +1340,8 @@ public class Game1 : Game
         _particles.Clear();
         _skillSystem.ResetCooldowns();
         _zoneSystem.Clear();
+        _pendingGroundEffects.Clear();
+        _player.StatusEffects.Clear();
         _kiemYStacks = 0;
         _kiemYTimer = 0f;
 
@@ -1379,20 +1468,51 @@ public class Game1 : Game
     {
         if (!SkillExecutionTypeExtensions.TryParse(skill.Type, out var execType)) return;
 
-        if (execType == SkillExecutionType.Dash)
+        switch (execType)
         {
-            ApplyDash(skill, targetPos, outcome);
-        }
-        else if (execType == SkillExecutionType.Zone)
-        {
-            _zoneSystem.Spawn(targetPos, skill, outcome.EffectiveDamagePerTick);
-            SpawnElementalBurst(targetPos, ElementExtensions.ParseElement(skill.Element), 10);
+            case SkillExecutionType.Dash:
+                ApplyDash(skill, targetPos, outcome);
+                break;
+
+            case SkillExecutionType.Zone:
+                _zoneSystem.Spawn(targetPos, skill, outcome.EffectiveDamagePerTick);
+                SpawnElementalBurst(targetPos, ElementExtensions.ParseElement(skill.Element), 10);
+                break;
+
+            case SkillExecutionType.Channel:
+                // Vận công: neo tại vị trí người chơi lúc thi triển thay vì con trỏ (chưa có input kiểu "giữ phím")
+                _zoneSystem.Spawn(_player.Position, skill, outcome.EffectiveDamagePerTick);
+                SpawnElementalBurst(_player.Position, ElementExtensions.ParseElement(skill.Element), 14);
+                break;
+
+            case SkillExecutionType.MeleeArc:
+                ApplyMeleeArc(skill, targetPos, outcome);
+                break;
+
+            case SkillExecutionType.GroundAoe:
+                ApplyGroundAoe(skill, targetPos, outcome);
+                break;
+
+            case SkillExecutionType.SelfBuff:
+                ApplySelfBuff(skill);
+                break;
         }
     }
 
-    /// <summary>Di chuyển tức thời theo hướng con trỏ, gây sát thương + đẩy lùi Yêu Thú quanh điểm đến.</summary>
+    /// <summary>
+    /// Di chuyển tức thời theo hướng con trỏ, gây sát thương + đẩy lùi Yêu Thú quanh điểm đến
+    /// (Kiếm Độn kiểu dữ liệu có dash_distance), hoặc nếu chiêu chỉ có speed_bonus_percent
+    /// (Thần Hành Phù) thì áp buff tăng tốc thay vì di chuyển.
+    /// </summary>
     private void ApplyDash(SkillData skill, Vector2 targetPos, SkillCastOutcome outcome)
     {
+        if (skill.DashDistance <= 0f && !skill.Teleport)
+        {
+            _player.StatusEffects.Apply(new StatusEffect(StatusType.SpeedUp, skill.Duration, skill.SpeedBonusPercent));
+            SpawnElementalBurst(_player.Position, Element.None, 10);
+            return;
+        }
+
         Vector2 origin = _player.Position;
         Vector2 dir = targetPos - origin;
         if (dir == Vector2.Zero) dir = new Vector2(1, 0);
@@ -1419,6 +1539,106 @@ public class Game1 : Game
         TriggerShake(0.1f, 2f);
     }
 
+    /// <summary>Đòn cận chiến hình quạt trước mặt — dùng CombatSystem.QueryArc theo hướng con trỏ.</summary>
+    private void ApplyMeleeArc(SkillData skill, Vector2 targetPos, SkillCastOutcome outcome)
+    {
+        Vector2 origin = _player.Position;
+        Vector2 dir = targetPos - origin;
+        float halfAngle = MathHelper.ToRadians(skill.ArcAngleDeg / 2f);
+        var targets = _combatSystem.QueryArc(origin, dir, skill.Radius, halfAngle);
+
+        foreach (var monster in targets)
+        {
+            _combatSystem.ApplyHit(monster, outcome.EffectiveDamage, ElementExtensions.ParseElement(skill.Element),
+                                   isSilent: false, skill.OnHitEffects, ProjectileOwner.Player, monster.Position);
+            _combatSystem.ApplyKnockback(monster, origin, skill.Knockback);
+        }
+
+        SpawnElementalBurst(origin + (dir == Vector2.Zero ? Vector2.Zero : Vector2.Normalize(dir) * (skill.Radius * 0.5f)),
+                            ElementExtensions.ParseElement(skill.Element), targets.Count > 0 ? 14 : 6);
+        TriggerShake(0.12f, 3f);
+    }
+
+    /// <summary>Đặt hàng một đòn xuống đất có báo hiệu — neo tại con trỏ nếu có Delay, tại vị trí bản thân nếu tức thời (delay ≤ 0).</summary>
+    private void ApplyGroundAoe(SkillData skill, Vector2 targetPos, SkillCastOutcome outcome)
+    {
+        Vector2 anchor = skill.Delay > 0f ? targetPos : _player.Position;
+        _pendingGroundEffects.Add(new PendingGroundEffect(anchor, Math.Max(skill.Delay, 0.05f), skill.Radius,
+                                                           outcome.EffectiveDamage, skill.Knockback,
+                                                           ElementExtensions.ParseElement(skill.Element), skill.OnHitEffects));
+    }
+
+    /// <summary>Buff/khiên lên chính người chơi (Kim Cương Bất Hoại, Băng Tinh Thuẫn, Hộ Thân Phù, Pháp Tướng Thiên Địa...).</summary>
+    private void ApplySelfBuff(SkillData skill)
+    {
+        if (skill.ShieldPercentMaxHp > 0f)
+        {
+            _player.StatusEffects.Apply(new StatusEffect(StatusType.Shield, skill.Duration, _player.Cultivation.MaxHP * skill.ShieldPercentMaxHp));
+        }
+        if (skill.DamageReflectPercent > 0f)
+        {
+            _player.StatusEffects.Apply(new StatusEffect(StatusType.DamageReflect, skill.Duration, skill.DamageReflectPercent));
+        }
+        if (skill.AttackBonusPercent > 0f)
+        {
+            _player.StatusEffects.Apply(new StatusEffect(StatusType.AttackUp, skill.Duration, skill.AttackBonusPercent));
+        }
+        if (skill.DamageReductionPercent > 0f)
+        {
+            _player.StatusEffects.Apply(new StatusEffect(StatusType.DamageReduction, skill.Duration, skill.DamageReductionPercent));
+        }
+        // Lưu ý: formation_power_bonus_percent (Hộ Thân Phù) chưa được thi triển — Trận Pháp gần đó
+        // chưa nhận buff sức mạnh; ghi nhận là hạn chế đã biết.
+
+        SpawnElementalBurst(_player.Position, Element.None, 16);
+        TriggerShake(0.1f, 2.5f);
+    }
+
+    /// <summary>Trừ khiên rồi giảm % theo hiệu ứng Giảm Sát Thương đang có trên người chơi. Trả về sát thương thực nhận.</summary>
+    private float MitigatePlayerDamage(float rawAmount)
+    {
+        if (rawAmount <= 0f) return rawAmount;
+
+        float remaining = _player.StatusEffects.AbsorbWithShield(rawAmount);
+        float reduction = _player.StatusEffects.GetValue(StatusType.DamageReduction) + (_theTuPassivesActive ? THE_TU_DAMAGE_REDUCTION : 0f);
+        return remaining * Math.Max(0f, 1f - reduction);
+    }
+
+    /// <summary>Đếm ngược các đòn "ground_aoe" đang chờ báo hiệu, gây sát thương khi hết giờ.</summary>
+    private void UpdatePendingGroundEffects(float deltaTime)
+    {
+        for (int i = _pendingGroundEffects.Count - 1; i >= 0; i--)
+        {
+            var effect = _pendingGroundEffects[i];
+            effect.Delay -= deltaTime;
+
+            if (!effect.Resolved && effect.Delay <= 0f)
+            {
+                effect.Resolved = true;
+                TriggerShake(0.2f, 4.5f);
+                SpawnExplosion(effect.Position, Color.OrangeRed, 22);
+
+                // Chỉ nhắm Yêu Thú (không gây sát thương lên chính người chơi) theo thiết kế hiện tại.
+                foreach (var monster in _combatSystem.QueryCircle(effect.Position, effect.Radius))
+                {
+                    _combatSystem.ApplyHit(monster, effect.Damage, effect.Element, isSilent: false, effect.OnHitEffects, ProjectileOwner.Player, monster.Position);
+                    _combatSystem.ApplyKnockback(monster, effect.Position, effect.Knockback);
+                }
+            }
+
+            if (effect.Resolved)
+            {
+                _pendingGroundEffects.RemoveAt(i);
+            }
+        }
+    }
+
+    /// <summary>Trận Đạo Tinh Thông (Phù Trận Sư): tối đa 5 trận pháp thay vì 3. Static/thuần để test độc lập.</summary>
+    public static int GetMaxFormationsForClass(ClassData cls)
+    {
+        return cls.Passives.Any(p => p.Id == "tran_dao_tinh_thong") ? MAX_FORMATIONS_TRAN_DAO : MAX_FORMATIONS_DEFAULT;
+    }
+
     /// <summary>So sánh bộ chiêu mở khóa trước/sau khi lên cảnh giới, thông báo chiêu mới lĩnh ngộ.</summary>
     private void AnnounceNewlyUnlockedSkills()
     {
@@ -1436,9 +1656,9 @@ public class Game1 : Game
         var state = _player.Cultivation.CurrentState;
         if (state == CultivationState.Dead || state == CultivationState.Breakthrough) return;
 
-        if (_formations.Count >= MAX_FORMATIONS)
+        if (_formations.Count >= _maxFormations)
         {
-            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), $"Tối đa {MAX_FORMATIONS} trận pháp!", Color.OrangeRed));
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), $"Tối đa {_maxFormations} trận pháp!", Color.OrangeRed));
             return;
         }
 
@@ -1455,7 +1675,7 @@ public class Game1 : Game
         SpawnElementalBurst(_player.Position, Element.None, 15);
 
         _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 15), $"+ {formation.Name}", Color.Gold));
-        Console.WriteLine($"[Trận Pháp] ⚙ Đã bày {formation.Name} tại {formation.Position.X:F0},{formation.Position.Y:F0} ({_formations.Count}/{MAX_FORMATIONS}).");
+        Console.WriteLine($"[Trận Pháp] ⚙ Đã bày {formation.Name} tại {formation.Position.X:F0},{formation.Position.Y:F0} ({_formations.Count}/{_maxFormations}).");
     }
 
     private void TryRechargeNearestFormation()
@@ -1590,8 +1810,10 @@ public class Game1 : Game
 
                     if (Vector2.Distance(_player.Position, strike.Position) <= strike.Radius + 10f)
                     {
-                        _player.Cultivation.TakeTribulationDamage(strike.Damage);
-                        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), $"-{strike.Damage:F0} Lôi Kiếp!", Color.Cyan, 1.3f, 1.1f));
+                        float dmg = MitigatePlayerDamage(strike.Damage);
+                        if (_theTuPassivesActive) dmg *= 1f - THE_TU_TRIBULATION_REDUCTION; // Đồng Bì Thiết Cốt: riêng lôi kiếp giảm thêm
+                        _player.Cultivation.TakeTribulationDamage(dmg);
+                        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), $"-{dmg:F0} Lôi Kiếp!", Color.Cyan, 1.3f, 1.1f));
                     }
                 }
             }
@@ -1735,7 +1957,7 @@ public class Game1 : Game
         // Pháp Khí + Trận Pháp
         int wY = spY + spacing;
         string weaponName = GetItemName(_player.Inventory.EquippedWeapon?.ItemId ?? string.Empty);
-        _spriteBatch.DrawString(_font, $"Pháp khí: {weaponName} | Trận: {_formations.Count}/{MAX_FORMATIONS}", new Vector2(startX, wY + 5), Color.Khaki, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, $"Pháp khí: {weaponName} | Trận: {_formations.Count}/{_maxFormations}", new Vector2(startX, wY + 5), Color.Khaki, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
         _spriteBatch.DrawString(_font, $"Trận kế tiếp: {FormationArray.GetFormationName(_nextFormationType)} (Y)", new Vector2(startX, wY + 21), Color.Tan, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
 
         // Linh Căn và tỷ lệ đột phá
@@ -1781,6 +2003,15 @@ public class Game1 : Game
         if (_skillLoadout.PlayerClass.Id == "kiem_tu" && _kiemYStacks > 0)
         {
             _spriteBatch.DrawString(_font, $"Kiếm Ý x{_kiemYStacks} (+{_kiemYStacks * 3}% sát thương)", new Vector2(skillX + 8, bannerY + 4), Color.Cyan, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
+            bannerY += 16;
+        }
+
+        // Buff đang hiệu lực trên người chơi (từ chiêu self_buff/dash)
+        var playerBuffs = _player.StatusEffects.Effects;
+        if (playerBuffs.Count > 0)
+        {
+            string buffLine = string.Join("  ", playerBuffs.Select(b => $"{StatusEffect.GetDisplayName(b.Type)} ({b.Remaining:F0}s)"));
+            _spriteBatch.DrawString(_font, buffLine, new Vector2(skillX + 8, bannerY + 4), Color.LightSkyBlue, 0f, Vector2.Zero, 0.6f, SpriteEffects.None, 0f);
         }
 
         float pulse = (float)(Math.Sin(time * 8.0) * 0.4 + 0.6);
@@ -2117,6 +2348,12 @@ public class Game1 : Game
             {
                 _kiemYStacks = Math.Min(KIEM_Y_MAX_STACKS, _kiemYStacks + 1);
                 _kiemYTimer = KIEM_Y_DECAY_TIME;
+            }
+
+            // Khí Huyết Cuồn Cuộn (Thể Tu): hút lại % sát thương gây ra thành HP
+            if (e.Owner == ProjectileOwner.Player && _theTuPassivesActive)
+            {
+                _player.Cultivation.Heal(e.Amount * THE_TU_LIFESTEAL);
             }
         });
 

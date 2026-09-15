@@ -19,7 +19,8 @@ namespace SandboxTuTien.Core.Combat
         DefenseUp,       // Tăng thủ theo Value
         DefenseDown,     // Giảm thủ theo Value (VD: Kiếm Tâm Phá Giáp)
         SpeedUp,         // Tăng tốc theo Value
-        DamageReduction  // Giảm sát thương nhận vào theo Value
+        DamageReduction, // Giảm sát thương nhận vào theo Value
+        DamageReflect    // Phản lại % sát thương nhận vào cho kẻ tấn công, theo Value
     }
 
     /// <summary>
@@ -74,6 +75,7 @@ namespace SandboxTuTien.Core.Combat
                 StatusType.DefenseDown => "Giảm thủ",
                 StatusType.SpeedUp => "Tăng tốc",
                 StatusType.DamageReduction => "Giảm sát thương",
+                StatusType.DamageReflect => "Phản đòn",
                 _ => type.ToString()
             };
         }

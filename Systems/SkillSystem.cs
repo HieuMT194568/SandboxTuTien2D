@@ -42,17 +42,19 @@ namespace SandboxTuTien.Systems
     /// <summary>
     /// Hệ thống thi triển chiêu thức: kiểm tra mở khóa theo cảnh giới, hồi chiêu, Linh Lực,
     /// tính hệ số thông thạo (mastery) và ghi nhận lượt dùng. Tự thi triển kiểu "projectile"
-    /// (spawn đạn); các kiểu "dash" và "zone" được xác nhận + tính toán ở đây nhưng Game1 mới
-    /// là nơi thực sự di chuyển nhân vật / sinh vùng hiệu ứng (SkillSystem không giữ tham chiếu
-    /// tới Player hay ZoneSystem để tránh phụ thuộc ngược).
-    /// Các kiểu "melee_arc", "ground_aoe", "self_buff", "channel" trả về NotSupported — sẽ được
-    /// thi triển ở giai đoạn tiếp theo khi các lưu phái khác Kiếm Tu được hoàn thiện.
+    /// (spawn đạn); các kiểu "dash", "zone", "melee_arc", "ground_aoe", "self_buff", "channel"
+    /// được xác nhận + tính toán ở đây nhưng Game1 mới là nơi thực sự di chuyển nhân vật / tìm
+    /// mục tiêu vùng / áp buff / sinh vùng hiệu ứng (SkillSystem không giữ tham chiếu tới Player,
+    /// CombatSystem hay ZoneSystem để tránh phụ thuộc ngược).
     /// </summary>
     public class SkillSystem
     {
         private readonly ProjectilePool _projectilePool;
         private readonly Dictionary<string, float> _cooldowns = new();
         private readonly Random _random = new();
+
+        /// <summary>Xác suất một lần thi triển không tốn Linh Lực (nội tại Phù Lục Tiết Kiệm của Phù Trận Sư).</summary>
+        public float FreeCastChance { get; set; }
 
         public SkillSystem(ProjectilePool projectilePool)
         {
@@ -107,8 +109,12 @@ namespace SandboxTuTien.Systems
             {
                 SkillExecutionType.Projectile => true,
                 SkillExecutionType.Zone => true,
-                SkillExecutionType.Dash => skill.DashDistance > 0f || skill.Teleport,
-                _ => false // melee_arc / ground_aoe / self_buff / channel: chưa thi triển
+                SkillExecutionType.MeleeArc => true,
+                SkillExecutionType.GroundAoe => true,
+                SkillExecutionType.SelfBuff => true,
+                SkillExecutionType.Channel => true,
+                SkillExecutionType.Dash => skill.DashDistance > 0f || skill.Teleport || skill.SpeedBonusPercent > 0f,
+                _ => false
             };
             if (!supported)
                 return CastResult.NotSupported;
@@ -116,8 +122,13 @@ namespace SandboxTuTien.Systems
             if (GetCooldownRemaining(skill.Id) > 0f)
                 return CastResult.OnCooldown;
 
-            if (!caster.ConsumeSpiritPower(skill.SPCost))
-                return CastResult.NotEnoughSpiritPower;
+            // Phù Lục Tiết Kiệm: một tỷ lệ % không tốn Linh Lực dù chiêu có sp_cost > 0
+            if (skill.SPCost > 0f)
+            {
+                bool freeCast = FreeCastChance > 0f && _random.NextDouble() < FreeCastChance;
+                if (!freeCast && !caster.ConsumeSpiritPower(skill.SPCost))
+                    return CastResult.NotEnoughSpiritPower;
+            }
 
             float masteryMultiplier = loadout.GetMasteryMultiplier(skill);
             loadout.RecordUse(skill.Id);

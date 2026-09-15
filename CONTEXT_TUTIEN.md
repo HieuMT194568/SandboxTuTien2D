@@ -179,7 +179,7 @@ Chọn một lần khi bắt đầu game mới. `stat_multipliers` nhân vào HP
 ```
 *   `slot`: `basic` / `skill_1` / `skill_2` / `skill_3` / `dash` / `ultimate` — 6 ô cố định của mọi lưu phái.
 *   `unlock_realm`: mở khóa khi `CultivationComponent.CurrentRealm` đạt cảnh giới này (thay cho hệ tier-theo-đột-phá cũ).
-*   `type`: `projectile` (đã thi triển đầy đủ qua `SkillSystem`, dùng `pattern` `fan`/`barrage`/`nova`), `dash` (di chuyển tức thời + sát thương/đẩy lùi tại điểm đến, đã thi triển), `zone` (vùng sát thương/hồi máu theo thời gian qua `ZoneSystem`, đã thi triển). `melee_arc`, `ground_aoe`, `self_buff`, `channel` đã có đủ trường dữ liệu nhưng **chưa được thi triển** — `SkillSystem.TryCast` trả về `NotSupported`.
+*   `type`: cả 7 kiểu đều đã thi triển qua `SkillSystem` — `projectile` (`pattern` `fan`/`barrage`/`nova`), `dash` (di chuyển tức thời + sát thương/đẩy lùi, hoặc buff tăng tốc nếu chỉ có `speed_bonus_percent`), `zone`/`channel` (vùng sát thương/hồi máu theo thời gian qua `ZoneSystem` — `channel` neo tại người thi triển, `zone` neo tại điểm ngắm), `melee_arc` (hình quạt trước mặt qua `CombatSystem.QueryArc`), `ground_aoe` (báo hiệu `delay` giây rồi mới gây sát thương vùng, qua `PendingGroundEffect`), `self_buff` (áp `StatusEffect` lên `Player.StatusEffects`: khiên, giảm sát thương, phản đòn, tăng công). Riêng `formation_power_bonus_percent` (Hộ Thân Phù) chưa thi triển.
 *   `GameDataValidator` kiểm tra mọi id lưu phái tham chiếu tồn tại, đúng `class_id`, đúng `slot` khai báo.
 
 ---

@@ -20,6 +20,9 @@ namespace SandboxTuTien.Entities
         /// <summary>Túi trữ vật của người chơi.</summary>
         public InventoryComponent Inventory { get; set; }
 
+        /// <summary>Hiệu ứng trạng thái trên người chơi (khiên, giảm sát thương, phản đòn, tăng tốc... từ chiêu self_buff/dash).</summary>
+        public StatusEffectComponent StatusEffects { get; } = new();
+
         // ====================================================================
         // VỊ TRÍ (Position 2D thực tế cho di chuyển và ngắm bắn)
         // ====================================================================
@@ -49,15 +52,17 @@ namespace SandboxTuTien.Entities
         /// <param name="hpMultiplier">Hệ số nhân HP tối đa theo lưu phái.</param>
         /// <param name="spiritPowerMultiplier">Hệ số nhân Linh Lực tối đa theo lưu phái.</param>
         /// <param name="moveSpeedMultiplier">Hệ số nhân tốc độ di chuyển theo lưu phái.</param>
+        /// <param name="spiritPowerRegenMultiplier">Hệ số nhân tốc độ hồi Linh Lực tự nhiên theo lưu phái.</param>
         public Player(string name, EventManager eventManager, int innateLevel = 1, float spiritRootMultiplier = 1.0f,
                       Element spiritRootElement = Element.None, float hpMultiplier = 1f,
-                      float spiritPowerMultiplier = 1f, float moveSpeedMultiplier = 1f)
+                      float spiritPowerMultiplier = 1f, float moveSpeedMultiplier = 1f,
+                      float spiritPowerRegenMultiplier = 1f)
         {
             Name = name;
 
             Cultivation = new CultivationComponent(eventManager, innateLevel, spiritRootMultiplier,
                                                    spiritRootElement, hpMultiplier, spiritPowerMultiplier,
-                                                   moveSpeedMultiplier)
+                                                   moveSpeedMultiplier, spiritPowerRegenMultiplier)
             {
                 OwnerName = name
             };

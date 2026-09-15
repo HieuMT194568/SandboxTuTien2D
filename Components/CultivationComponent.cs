@@ -102,6 +102,9 @@ namespace SandboxTuTien.Components
         /// <summary>Tâm Ma tăng thêm sau mỗi lần đột phá thất bại.</summary>
         private const float HEART_DEMON_PER_FAILURE = 0.1f;
 
+        /// <summary>Linh Lực hồi phục tự nhiên cơ bản (điểm/giây) khi không chết/không đột phá.</summary>
+        private const float BASE_SPIRIT_POWER_REGEN = 3.0f;
+
         // ====================================================================
         // PROPERTIES — Trạng thái tu luyện
         // ====================================================================
@@ -135,6 +138,9 @@ namespace SandboxTuTien.Components
 
         /// <summary>Hệ số nhân tốc độ di chuyển theo lưu phái (Game1 đọc khi tính di chuyển).</summary>
         public float MoveSpeedMultiplier { get; }
+
+        /// <summary>Hệ số nhân tốc độ hồi Linh Lực tự nhiên theo lưu phái (VD: Pháp Tu — Linh Hải, 1.5x).</summary>
+        public float SpiritPowerRegenMultiplier { get; }
 
         /// <summary>Trạng thái FSM hiện tại.</summary>
         public CultivationState CurrentState { get; private set; }
@@ -235,6 +241,13 @@ namespace SandboxTuTien.Components
             Console.WriteLine($"[Hồi Linh Lực] {OwnerName} được hồi {amount:F0} Linh Lực → {SpiritPower:F0}/{MaxSpiritPower:F0}");
         }
 
+        /// <summary>Hồi Linh Lực tự nhiên mỗi frame — không log để tránh spam console.</summary>
+        private void RecoverSpiritPowerSilent(float amount)
+        {
+            if (CurrentState == CultivationState.Dead) return;
+            SpiritPower = Math.Clamp(SpiritPower + amount, 0f, MaxSpiritPower);
+        }
+
         /// <summary>Tiêu hao Linh Lực.</summary>
         public bool ConsumeSpiritPower(float amount)
         {
@@ -304,9 +317,11 @@ namespace SandboxTuTien.Components
         /// <param name="hpMultiplier">Hệ số nhân HP tối đa theo lưu phái (mặc định 1.0).</param>
         /// <param name="spiritPowerMultiplier">Hệ số nhân Linh Lực tối đa theo lưu phái (mặc định 1.0).</param>
         /// <param name="moveSpeedMultiplier">Hệ số nhân tốc độ di chuyển theo lưu phái (mặc định 1.0).</param>
+        /// <param name="spiritPowerRegenMultiplier">Hệ số nhân tốc độ hồi Linh Lực tự nhiên (mặc định 1.0).</param>
         public CultivationComponent(EventManager eventManager, int innateLevel, float spiritRootMultiplier,
                                     Element spiritRootElement, float hpMultiplier = 1f,
-                                    float spiritPowerMultiplier = 1f, float moveSpeedMultiplier = 1f)
+                                    float spiritPowerMultiplier = 1f, float moveSpeedMultiplier = 1f,
+                                    float spiritPowerRegenMultiplier = 1f)
         {
             _eventManager = eventManager ?? throw new ArgumentNullException(nameof(eventManager));
 
@@ -316,6 +331,7 @@ namespace SandboxTuTien.Components
             HpMultiplier = hpMultiplier;
             SpiritPowerMultiplier = spiritPowerMultiplier;
             MoveSpeedMultiplier = moveSpeedMultiplier;
+            SpiritPowerRegenMultiplier = spiritPowerRegenMultiplier;
             BreakthroughCount = 0;
             // Khởi đầu đúng mốc bình cảnh (VD: tầng 10) thì phải đột phá trước
             CurrentState = IsAtBottleneck() ? CultivationState.BreakthroughReady : CultivationState.Idle;
@@ -348,6 +364,12 @@ namespace SandboxTuTien.Components
             {
                 HoTTimer -= deltaTime;
                 HP = Math.Clamp(HP + MaxHP * _hotPercentPerSecond * deltaTime, 0f, MaxHP);
+            }
+
+            // Hồi Linh Lực tự nhiên — dừng khi đang đột phá (bình cảnh vẫn hồi được, chờ đủ máu/lực trước khi đột phá)
+            if (CurrentState != CultivationState.Dead && CurrentState != CultivationState.Breakthrough)
+            {
+                RecoverSpiritPowerSilent(BASE_SPIRIT_POWER_REGEN * SpiritPowerRegenMultiplier * deltaTime);
             }
 
             switch (CurrentState)

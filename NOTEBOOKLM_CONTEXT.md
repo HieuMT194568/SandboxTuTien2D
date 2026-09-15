@@ -62,7 +62,7 @@ $$\text{Age} \mathrel{+}= \text{Random}(8 \to 15) \times \Delta t \quad(\text{c�
 ## ⚔️ 4. Lưu Phái, Chiêu Thức, Pháp Khí & Trận Pháp
 
 0.  **Lưu Phái** (`classes.json`, chọn 1 lần khi bắt đầu game): Kiếm Tu, Pháp Tu (chia theo hệ Linh Căn Hỏa/Mộc/Băng), Thể Tu, Phù Trận Sư. Mỗi lưu phái có hệ số HP/Linh Lực/Tốc độ, 2 nội tại, và bộ 6 ô chiêu (đánh thường/chiêu 1-3/lướt/tuyệt kỹ). `SkillLoadoutComponent` tra ô chiêu, kiểm mở khóa theo cảnh giới, và theo dõi độ thông thạo (4 bậc: Nhập Môn/Tiểu Thành/Đại Thành/Viên Mãn, lên bậc bằng số lần dùng).
-1.  **Chiêu Thức** (`skills.json`, 32 chiêu), 7 kiểu ra đòn — chỉ `projectile` (`fan`/`barrage`/`nova`), `dash`, `zone` đã thi triển qua `SkillSystem`/`ZoneSystem`; `melee_arc`/`ground_aoe`/`self_buff`/`channel` mới có dữ liệu, thi triển ở giai đoạn sau:
+1.  **Chiêu Thức** (`skills.json`, 32 chiêu), đủ cả 7 kiểu ra đòn qua `SkillSystem`/`CombatSystem`/`ZoneSystem`: `projectile` (`fan`/`barrage`/`nova`), `dash`, `zone`, `channel` (neo tại người thi triển), `melee_arc` (hình quạt), `ground_aoe` (báo hiệu rồi nổ), `self_buff` (khiên/giảm sát thương/phản đòn/tăng công lên `Player.StatusEffects`):
     *   Kiếm Tu: *Ngự Kiếm Thuật* (đánh thường, projectile xuyên), *Kiếm Khí Trảm*, *Phân Quang Hóa Ảnh*, *Kiếm Tâm Phá Giáp*, *Kiếm Độn* (dash), *Vạn Kiếm Quy Tông* (zone, tuyệt kỹ).
     *   Pháp Tu Hỏa: *Liệt Hỏa Phi Tiễn* (chuỗi 8 tia), *Tam Muội Chân Hỏa*. Mộc: *Triền Đằng Thuật*, *Vạn Mộc Khốn Trận*. Băng: *Hàn Băng Tiễn*, *Huyền Băng Thiên Hàng*.
 2.  **Pháp Khí** (`phap_khi.json`): *Thanh Phong Phi Kiếm* (Mộc, 3 kiếm, không kinh động Yêu Thú), *Xích Diễm Kiếm Hạp* (Hỏa, 16 kiếm) — nguyên liệu chế tạo/trang bị cảnh, không còn quyết định đòn đánh thường (nay lấy từ chiêu "basic" của lưu phái).

@@ -100,7 +100,9 @@ Chọn một trong 4 lưu phái khi bắt đầu game mới — cố định su�
 
 Mỗi chiêu mở khóa theo cảnh giới (VD: đánh thường + chiêu 1 ở Luyện Khí, tuyệt kỹ ở Nguyên Anh) và có 4 bậc công pháp (Nhập Môn → Tiểu Thành → Đại Thành → Viên Mãn), lên bậc bằng số lần dùng, mỗi bậc cộng thêm % hiệu quả.
 
-> **Hiện trạng:** Kiếm Tu chơi được trọn vẹn (cả 6 ô chiêu: bắn đạn, lướt, mưa kiếm tuyệt kỹ). Pháp Tu/Thể Tu/Phù Trận Sư đã có đủ dữ liệu và chọn được, nhưng các chiêu kiểu cận chiến (`melee_arc`), đòn xuống đất (`ground_aoe`), buff bản thân (`self_buff`) và vận công (`channel`) **chưa được thi triển** — bấm sẽ báo "Chiêu này chưa hỗ trợ!" thay vì tiêu hao Linh Lực. Việc này sẽ hoàn thiện ở giai đoạn kế tiếp.
+**Cả 4 lưu phái đều chơi được trọn vẹn** — đủ 7 kiểu ra đòn: bắn đạn (`projectile`), cận chiến hình quạt (`melee_arc`), đòn xuống đất có báo hiệu (`ground_aoe`), vùng hiệu ứng theo thời gian (`zone`), buff/khiên bản thân (`self_buff`), lướt/dịch chuyển (`dash`, cả biến thể tăng tốc không di chuyển), vận công (`channel` — hiện thi triển như một vùng tự bùng quanh người thi triển, chưa phải chùm tia liên tục theo hướng nhắm, do input hiện tại chỉ có "bấm 1 lần" chứ chưa có "giữ phím").
+
+**Nội tại đã hoạt động thật** ở cả 4 lưu phái: Kiếm Ý & Kiếm Tâm Thông Minh (Kiếm Tu), Ngũ Hành Tương Khắc & Linh Hải (Pháp Tu — Linh Hải tăng tốc hồi Linh Lực tự nhiên, một cơ chế mới áp dụng cho mọi lưu phái ở mức nền 3 điểm/giây), Đồng Bì Thiết Cốt & Khí Huyết Cuồn Cuộn (Thể Tu — giảm sát thương chung + giảm thêm khi độ Thiên Kiếp, hút máu theo sát thương gây ra), Trận Đạo Tinh Thông & Phù Lục Tiết Kiệm (Phù Trận Sư — tối đa 5 trận thay vì 3, 15% cơ hội thi triển miễn phí). Riêng phần "tăng sức mạnh Trận Pháp gần đó" của Hộ Thân Phù (Phù Trận Sư) chưa được thi triển.
 
 ### 1. Cảnh Giới
 Tu vi gồm 100 tầng, mỗi đại cảnh giới 10 tầng:
@@ -215,7 +217,7 @@ Mở game là vào thẳng màn chọn lưu phái: **`[1]`–`[4]`** chọn lưu
 | Thời gian thế giới | [GameTimeManager.cs](Core/GameTimeManager.cs) | ✅ Hoàn thành |
 | Dữ liệu JSON | [Content/Data/](Content/Data/) + [Data/Models/](Data/Models/) | ✅ Đan dược, pháp khí, lưu phái, chiêu thức, công thức |
 | FSM tu luyện | [CultivationComponent.cs](Components/CultivationComponent.cs) | ✅ Bình cảnh, xung quan, Thiên Kiếp, Tâm Ma, Đan dược, hệ số chỉ số theo lưu phái |
-| Lưu phái & chiêu thức | [SkillLoadoutComponent.cs](Components/SkillLoadoutComponent.cs), [SkillSystem.cs](Systems/SkillSystem.cs) | 🟡 4 lưu phái chọn được; Kiếm Tu chơi trọn vẹn (projectile/dash/zone), 4 kiểu ra đòn còn lại chờ giai đoạn sau |
+| Lưu phái & chiêu thức | [SkillLoadoutComponent.cs](Components/SkillLoadoutComponent.cs), [SkillSystem.cs](Systems/SkillSystem.cs) | ✅ Cả 4 lưu phái chơi trọn vẹn, đủ 7 kiểu ra đòn; 8 nội tại hoạt động (trừ phần buff Trận Pháp của Hộ Thân Phù) |
 | Time-Slicing | [CultivationSystem.cs](Systems/CultivationSystem.cs) | ✅ Hoàn thành |
 | Túi trữ vật | [InventoryComponent.cs](Components/InventoryComponent.cs) | ✅ Hoàn thành |
 | Chiến đấu | [CombatSystem.cs](Systems/CombatSystem.cs) | ✅ Va chạm, tìm mục tiêu vùng/quạt, khắc hệ, chí mạng, đẩy lùi, hiệu ứng trạng thái |
@@ -229,11 +231,13 @@ Mở game là vào thẳng màn chọn lưu phái: **`[1]`–`[4]`** chọn lưu
 
 ## 🔮 Kế Hoạch Tiếp Theo
 
-1. **Hoàn thiện 3 lưu phái còn lại**: thi triển 4 kiểu ra đòn còn thiếu — cận chiến hình quạt (`melee_arc`, Thể Tu), đòn xuống đất có báo hiệu (`ground_aoe`, Pháp Tu/Phù Trận Sư), buff bản thân + khiên (`self_buff`), vận công liên tục (`channel`, Hỏa Long Phệ). Wiring đầy đủ nội tại của Pháp Tu/Thể Tu/Phù Trận Sư (hiện chỉ Kiếm Tu có 2 nội tại hoạt động).
-2. **StatsComponent**: chỉ số Công/Thủ tách khỏi HP/Linh Lực, để `DEFENSE_DOWN` (Kiếm Tâm Phá Giáp) và phòng thủ Yêu Thú có tác dụng thật.
-3. **Pierce thật sự**: trường `pierce` trên Pháp Khí/Chiêu đã có trong dữ liệu nhưng `CombatSystem` hiện vẫn hủy đạn ngay khi trúng mục tiêu đầu tiên.
-4. **Tiếp tục ván đã lưu từ màn chọn lưu phái**: hiện `[F9]` chỉ nạp lại trong cùng phiên chơi (đã chọn lưu phái); chưa hỗ trợ bỏ qua màn chọn lưu phái khi có save.
-5. **Động Phủ & Linh Điền**: đặt Bồ Đoàn, Trận Nhãn; trồng Linh Thảo với `Time_grow = Base_Time / Linh_Tích_Đất`.
-6. **Nhân quả & Tông môn**: điểm danh vọng theo tông môn, hệ thống truy sát báo thù (Vendetta).
-7. **Thú triều**: giết nhiều Yêu Thú có thể đánh thức Yêu Vương tấn công Động Phủ.
-8. **Sprite .png** cho `pill.png`, `beast_core.png`, `material.png`, `formation_flag.png`, `alchemist.png`.
+1. **Channel dạng chùm tia thật**: hiện Hỏa Long Phệ thi triển như vùng tự bùng quanh người dùng (tái dùng `ZoneSystem`) vì input mới chỉ có "bấm 1 lần"; cần thêm cơ chế "giữ phím" để channel đúng nghĩa là chùm tia liên tục theo hướng ngắm.
+2. **Buff Trận Pháp gần đó**: `formation_power_bonus_percent` của Hộ Thân Phù (Phù Trận Sư) đã có trong dữ liệu nhưng chưa được thi triển.
+3. **StatsComponent**: chỉ số Công/Thủ tách khỏi HP/Linh Lực, để `DEFENSE_DOWN` (Kiếm Tâm Phá Giáp) và phòng thủ Yêu Thú có tác dụng thật.
+4. **Pierce thật sự**: trường `pierce` trên Pháp Khí/Chiêu đã có trong dữ liệu nhưng `CombatSystem` hiện vẫn hủy đạn ngay khi trúng mục tiêu đầu tiên.
+5. **Tiếp tục ván đã lưu từ màn chọn lưu phái**: hiện `[F9]` chỉ nạp lại trong cùng phiên chơi (đã chọn lưu phái); chưa hỗ trợ bỏ qua màn chọn lưu phái khi có save.
+6. **Động Phủ & Linh Điền**: đặt Bồ Đoàn, Trận Nhãn; trồng Linh Thảo với `Time_grow = Base_Time / Linh_Tích_Đất`.
+7. **Nhân quả & Tông môn**: điểm danh vọng theo tông môn, hệ thống truy sát báo thù (Vendetta).
+8. **Thú triều**: giết nhiều Yêu Thú có thể đánh thức Yêu Vương tấn công Động Phủ.
+9. **Sprite .png** cho `pill.png`, `beast_core.png`, `material.png`, `formation_flag.png`, `alchemist.png`.
+10. **Cân bằng số liệu**: các con số sát thương/hồi chiêu/khiên hiện chỉ ước lượng hợp lý, chưa qua playtest thực tế nhiều giờ.
