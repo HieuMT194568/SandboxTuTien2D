@@ -12,7 +12,7 @@ namespace SandboxTuTien.Core
     public static class PixelArtGenerator
     {
         /// <summary>
-        /// Đường Tam Lam Ngân Hoàng (32x32):
+        /// Kiếm tu áo lam (32x32):
         /// Tóc dài màu xanh lam bay trong gió, giáp vai vàng (gold pauldrons), 
         /// đai lưng hoàng kim và tà áo dài chuyển sắc từ xanh đậm sang lam nhạt.
         /// </summary>
@@ -22,7 +22,7 @@ namespace SandboxTuTien.Core
             Color[] pixels = new Color[w * h];
             Color transparent = Color.Transparent;
 
-            // Palette màu Đường Tam Lam Ngân Hoàng
+            // Palette màu kiếm tu áo lam
             Color skinBase = new Color(245, 195, 170);      // Da thường
             Color skinShadow = new Color(210, 160, 135);    // Bóng cổ/mặt
             Color hairBlue = new Color(30, 100, 220);       // Tóc xanh lam hoàng tộc
@@ -460,62 +460,47 @@ namespace SandboxTuTien.Core
         }
 
         /// <summary>
-        /// Khôi Phục Hương Tràng (16x16):
-        /// Xúc xích đỏ hồng căng bóng đổ bóng 3D, cắm trên xiên gỗ rải bột tiêu,
-        /// bao quanh bởi một Vòng Hào Quang Kim Sắc (Golden Halo) xoay quanh thể hiện đồ ăn hồn kỹ.
+        /// Đan Dược (16x16):
+        /// Viên đan tròn màu ngọc bích đổ bóng 3D, có đan văn kim sắc uốn lượn
+        /// và quầng linh quang mờ bao quanh.
         /// </summary>
-        public static Texture2D CreateSausageTexture(GraphicsDevice gd)
+        public static Texture2D CreatePillTexture(GraphicsDevice gd)
         {
             int w = 16, h = 16;
             Color[] pixels = new Color[w * h];
             Color trans = Color.Transparent;
 
-            // Palette màu Xúc Xích Thần Kỳ
-            Color meatRed = new Color(225, 65, 75);         // Thịt đỏ hồng hào
-            Color meatShadow = new Color(150, 25, 35);      // Bóng tối sâu thẳm cuộn thịt
-            Color meatHighlight = new Color(255, 160, 165);   // Ánh sáng bóng loáng dầu mỡ
-            Color goldHalo = new Color(255, 215, 0, 220);    // Vòng hào quang hoàng kim
-            Color stickColor = new Color(195, 145, 95);      // Xiên gỗ rèn dũa
-            Color shadowColor = new Color(10, 10, 15, 100);  // Bóng đổ mờ của xiên
+            Color jade = new Color(110, 225, 165);           // Thân đan ngọc bích
+            Color jadeShadow = new Color(35, 135, 95);       // Bóng khối tròn
+            Color highlight = new Color(235, 255, 245);      // Vết sáng phản quang
+            Color pillVein = new Color(255, 210, 80);        // Đan văn kim sắc
+            Color aura = new Color(130, 255, 195, 90);       // Linh quang mờ
+
+            Vector2 center = new Vector2(7.5f, 7.5f);
+            Vector2 shine = new Vector2(5.5f, 5.5f);
 
             for (int y = 0; y < h; y++)
             {
                 for (int x = 0; x < w; x++)
                 {
                     Color c = trans;
+                    Vector2 p = new Vector2(x, y);
+                    float dist = Vector2.Distance(p, center);
 
-                    // 1. Que gỗ chéo cắm xiên (x + y == 20)
-                    if (x + y == 20 && x <= 9)
+                    if (dist <= 5.2f)
                     {
-                        c = stickColor;
-                        if (x == 9) c = shadowColor; // Bóng đầu cắm
+                        c = jade;
+                        if (x + y > 17) c = jadeShadow;
+
+                        // Đan văn uốn lượn ngang thân đan
+                        float veinY = 7.5f + (float)Math.Sin(x * 0.9f) * 1.2f;
+                        if (Math.Abs(y - veinY) < 0.5f && dist < 4.5f) c = pillVein;
+
+                        if (Vector2.Distance(p, shine) <= 1.6f) c = highlight;
                     }
-                    // 2. Thân xúc xích (elip nghiêng theo đường chéo x = y)
-                    else
+                    else if (dist <= 7.2f && (x * y) % 3 == 0)
                     {
-                        // Đo khoảng cách đến đường chéo chính x = y
-                        float distToLine = Math.Abs(x - y) / 1.414f;
-                        float distToCenter = Vector2.Distance(new Vector2(x, y), new Vector2(9.5f, 6.5f));
-
-                        if (distToLine <= 2.2f && distToCenter <= 5.8f)
-                        {
-                            c = meatRed;
-                            // Đổ bóng 3D làm nổi khối tròn
-                            if (x < y) c = meatShadow;
-                            // Vết sáng phản quang trên lưng xúc xích
-                            if (x > y && distToLine <= 1.2f) c = meatHighlight;
-                        }
-                    }
-
-                    // 3. Vòng hào quang kim sắc (vẽ các điểm phát sáng xung quanh ở R = 7)
-                    float distToCenterAll = Vector2.Distance(new Vector2(x, y), new Vector2(8, 8));
-                    if (distToCenterAll >= 6.2f && distToCenterAll <= 7.3f)
-                    {
-                        // Chỉ vẽ một số chấm lấp lánh (vòng tròn đứt nét)
-                        if ((x * y) % 4 == 0)
-                        {
-                            c = goldHalo;
-                        }
+                        c = aura;
                     }
 
                     pixels[y * w + x] = c;
@@ -528,7 +513,88 @@ namespace SandboxTuTien.Core
         }
 
         /// <summary>
-        /// Hồn Hoàn Thần Bí (64x64):
+        /// Yêu Đan (16x16):
+        /// Tinh thể hình thoi màu huyết tử, lõi xoáy yêu khí sáng rực và viền hắc quang.
+        /// </summary>
+        public static Texture2D CreateBeastCoreTexture(GraphicsDevice gd)
+        {
+            int w = 16, h = 16;
+            Color[] pixels = new Color[w * h];
+            Color trans = Color.Transparent;
+
+            Color crystal = new Color(170, 45, 120);         // Thân tinh thể huyết tử
+            Color crystalDark = new Color(90, 15, 60);       // Mặt khuất sáng
+            Color coreGlow = new Color(255, 140, 200);       // Lõi yêu khí
+            Color outline = new Color(40, 5, 30, 220);       // Viền hắc quang
+
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    Color c = trans;
+                    float manhattan = Math.Abs(x - 7.5f) + Math.Abs(y - 7.5f);
+
+                    if (manhattan <= 6f)
+                    {
+                        c = crystal;
+                        if (x > 7 && y > 7) c = crystalDark;
+                        if (manhattan <= 2.5f) c = coreGlow;
+                        if (manhattan > 5.2f) c = outline;
+                    }
+
+                    pixels[y * w + x] = c;
+                }
+            }
+
+            Texture2D texture = new Texture2D(gd, w, h);
+            texture.SetData(pixels);
+            return texture;
+        }
+
+        /// <summary>
+        /// Nguyên Liệu (16x16):
+        /// Khối khoáng thạch trắng xám nhiều mặt cắt, được tô màu (tint) khi vẽ
+        /// để phân biệt Linh Thạch, Hàn Thiết, Hỏa Tinh Thạch, Linh Mộc Tâm.
+        /// </summary>
+        public static Texture2D CreateMaterialTexture(GraphicsDevice gd)
+        {
+            int w = 16, h = 16;
+            Color[] pixels = new Color[w * h];
+            Color trans = Color.Transparent;
+
+            Color face = new Color(245, 245, 250);
+            Color faceMid = new Color(190, 190, 200);
+            Color faceDark = new Color(120, 120, 135);
+            Color edge = new Color(60, 60, 70);
+
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    Color c = trans;
+
+                    // Khối lục giác dẹt
+                    bool inside = y >= 3 && y <= 13 && x >= 2 && x <= 13 &&
+                                  Math.Abs(x - 7.5f) + Math.Abs(y - 8f) * 0.8f <= 7.5f;
+                    if (inside)
+                    {
+                        c = faceMid;
+                        if (x < 7 && y < 8) c = face;
+                        if (x > 8 && y > 8) c = faceDark;
+                        if (Math.Abs(x - 7.5f) + Math.Abs(y - 8f) * 0.8f > 6.6f) c = edge;
+                    }
+
+                    pixels[y * w + x] = c;
+                }
+            }
+
+            Texture2D texture = new Texture2D(gd, w, h);
+            texture.SetData(pixels);
+            return texture;
+        }
+
+        /// <summary>
+        /// Vòng Linh Quang (64x64):
         /// Vòng tròn phát sáng có hiệu ứng chuyển màu mềm mại từ ngoài vào trong (soft gradient glow),
         /// xuất hiện các ký tự runic ẩn hiện và các hạt bụi năng lượng lấp lánh xoay quanh.
         /// </summary>
@@ -555,7 +621,7 @@ namespace SandboxTuTien.Core
                     float distSq = dx * dx + dy * dy;
                     Color c = trans;
 
-                    // 1. Vòng Hồn Hoàn lõi chính (Rất đặc)
+                    // 1. Vòng linh quang lõi chính (Rất đặc)
                     if (distSq <= rSquared && distSq >= innerSquared)
                     {
                         // Tạo hoa văn runic đứt quãng tự nhiên (bản chất là các khe hở)
@@ -604,22 +670,23 @@ namespace SandboxTuTien.Core
         }
 
         /// <summary>
-        /// Vẽ Bệ Phóng Ám Khí Tự Động (Turret) (24x24):
-        /// Thiết kế cơ quan cơ học bằng kim loại đen nhám, chân giá đỡ gỗ chéo 3 chân,
-        /// khớp xoay bằng đồng vàng và nòng nỏ kim loại rực sáng ở đỉnh.
+        /// Trận Kỳ (24x24):
+        /// Cán cờ gỗ cắm trên đế đá, lá cờ đỏ viền kim tuyến in trận văn đen,
+        /// điểm linh quang lam sắc lấp lánh quanh cờ.
         /// </summary>
-        public static Texture2D CreateTurretTexture(GraphicsDevice gd)
+        public static Texture2D CreateFormationFlagTexture(GraphicsDevice gd)
         {
             int w = 24, h = 24;
             Color[] pixels = new Color[w * h];
             Color trans = Color.Transparent;
 
-            Color ironBlack = new Color(50, 52, 60);      // Sắt đen thân nòng
-            Color ironLight = new Color(110, 115, 125);    // Thép nòng sáng viền
-            Color brassGold = new Color(215, 160, 25);     // Khớp xoay đồng thau
-            Color woodLegs = new Color(130, 80, 40);       // Chân gỗ giá đỡ
-            Color woodShadow = new Color(85, 45, 15);      // Đổ bóng chân gỗ
-            Color glowCore = new Color(255, 120, 20);      // Lõi năng lượng xẹt lửa
+            Color pole = new Color(125, 80, 40);           // Cán cờ gỗ
+            Color stone = new Color(95, 100, 110);         // Đế đá
+            Color stoneDark = new Color(60, 62, 70);       // Bóng đế đá
+            Color banner = new Color(190, 35, 40);         // Lá cờ đỏ
+            Color bannerGold = new Color(235, 190, 60);    // Viền kim tuyến
+            Color rune = new Color(25, 15, 20);            // Trận văn
+            Color spark = new Color(120, 210, 255, 200);   // Linh quang
 
             for (int y = 0; y < h; y++)
             {
@@ -627,41 +694,150 @@ namespace SandboxTuTien.Core
                 {
                     Color c = trans;
 
-                    // 1. Ba Chân đỡ gỗ ở đáy (y từ 15 -> 23)
-                    // Chân trái (đường chéo trái)
-                    if (y >= 15 && x == 12 - (y - 15) && x >= 3)
+                    // 1. Cán cờ
+                    if (x >= 6 && x <= 7 && y >= 2 && y <= 21) c = pole;
+
+                    // 2. Lá cờ (x 8 -> 19, y 3 -> 13), mép dưới hình đuôi nheo
+                    bool inBanner = x >= 8 && x <= 19 && y >= 3 && y <= 13 &&
+                                    !(y == 13 && x >= 12 && x <= 15);
+                    if (inBanner)
                     {
-                        c = woodLegs;
-                        if (y >= 19) c = woodShadow;
-                    }
-                    // Chân phải (đường chéo phải)
-                    else if (y >= 15 && x == 11 + (y - 15) && x <= 20)
-                    {
-                        c = woodLegs;
-                        if (y >= 19) c = woodShadow;
-                    }
-                    // Chân giữa (dọc)
-                    else if (y >= 15 && y <= 21 && x == 11)
-                    {
-                        c = woodShadow;
+                        c = banner;
+                        if (x == 8 || x == 19 || y == 3 || y == 13) c = bannerGold;
+
+                        // Trận văn hình chữ thập kèm vòng
+                        bool cross = (x == 13 || x == 14) && y >= 5 && y <= 11 ||
+                                     (y == 8) && x >= 10 && x <= 17;
+                        if (cross) c = rune;
                     }
 
-                    // 2. Khớp xoay bằng đồng (y từ 11 -> 14, x ở giữa)
-                    if (y >= 11 && y <= 14 && x >= 9 && x <= 14)
+                    // 3. Đế đá
+                    if (y >= 21 && y <= 23 && x >= 3 && x <= 10)
                     {
-                        c = brassGold;
-                        if (x == 9 || y == 14) c = new Color(145, 105, 10); // Đổ bóng khớp xoay
+                        c = y == 23 ? stoneDark : stone;
                     }
 
-                    // 3. Thân nòng nỏ thép phóng đạn phía trên (y từ 3 -> 10, x từ 7 -> 16)
-                    if (y >= 3 && y <= 10 && x >= 8 && x <= 15)
+                    // 4. Linh quang lấp lánh
+                    if (c == trans && (x * 7 + y * 11) % 29 == 0 && y < 20) c = spark;
+
+                    pixels[y * w + x] = c;
+                }
+            }
+
+            Texture2D texture = new Texture2D(gd, w, h);
+            texture.SetData(pixels);
+            return texture;
+        }
+
+        /// <summary>
+        /// Đan Sư (32x32):
+        /// Lão giả tóc bạc râu dài, đạo bào tím đai vàng, bên hông đeo hồ lô đan dược.
+        /// </summary>
+        public static Texture2D CreateAlchemistTexture(GraphicsDevice gd)
+        {
+            int w = 32, h = 32;
+            Color[] pixels = new Color[w * h];
+            Color trans = Color.Transparent;
+
+            Color skin = new Color(235, 195, 160);
+            Color hair = new Color(230, 230, 235);         // Tóc/râu bạc
+            Color robe = new Color(95, 60, 140);           // Đạo bào tím
+            Color robeDark = new Color(60, 35, 95);
+            Color sash = new Color(230, 185, 60);          // Đai vàng
+            Color gourd = new Color(215, 120, 40);         // Hồ lô
+            Color eye = new Color(30, 25, 30);
+
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    Color c = trans;
+                    Vector2 p = new Vector2(x, y);
+
+                    // 1. Búi tóc và đầu
+                    if (Vector2.Distance(p, new Vector2(16, 3)) <= 2f) c = hair;
+                    if (Vector2.Distance(p, new Vector2(16, 8)) <= 4f)
                     {
-                        c = ironBlack;
-                        // Viền thép sáng
-                        if (x == 8 || y == 3 || x == 15) c = ironLight;
-                        // Lõi cơ quan năng lượng xẹt lửa đỏ cam
-                        if (y >= 5 && y <= 8 && x >= 11 && x <= 12) c = glowCore;
+                        c = skin;
+                        if (y <= 5) c = hair;
+                        if (y == 8 && (x == 14 || x == 18)) c = eye;
                     }
+
+                    // 2. Râu dài
+                    if (y >= 10 && y <= 16 && Math.Abs(x - 16) <= 3 - (y - 10) / 3) c = hair;
+
+                    // 3. Đạo bào hình thang
+                    int halfWidth = 4 + (y - 12) / 2;
+                    if (y >= 12 && y <= 30 && Math.Abs(x - 16) <= halfWidth && c == trans)
+                    {
+                        c = x < 16 ? robe : robeDark;
+                        if (y == 19) c = sash;
+                    }
+
+                    // 4. Hồ lô bên hông
+                    if (Vector2.Distance(p, new Vector2(24, 22)) <= 2.2f ||
+                        Vector2.Distance(p, new Vector2(24, 19)) <= 1.2f)
+                    {
+                        c = gourd;
+                    }
+
+                    pixels[y * w + x] = c;
+                }
+            }
+
+            Texture2D texture = new Texture2D(gd, w, h);
+            texture.SetData(pixels);
+            return texture;
+        }
+
+        /// <summary>
+        /// Lò Luyện Khí (32x32):
+        /// Đỉnh lô ba chân bằng đồng xanh, nắp có núm, lỗ thông khí và lửa đỏ cháy dưới đáy.
+        /// </summary>
+        public static Texture2D CreateFurnaceTexture(GraphicsDevice gd)
+        {
+            int w = 32, h = 32;
+            Color[] pixels = new Color[w * h];
+            Color trans = Color.Transparent;
+
+            Color bronze = new Color(170, 125, 60);
+            Color bronzeDark = new Color(105, 70, 30);
+            Color patina = new Color(90, 150, 125);        // Rỉ đồng xanh
+            Color fire = new Color(255, 120, 30);
+            Color fireCore = new Color(255, 225, 90);
+
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    Color c = trans;
+
+                    // 1. Lửa dưới đáy lô
+                    if (y >= 25 && y <= 29 && x >= 12 && x <= 20)
+                    {
+                        c = (x + y) % 3 == 0 ? fireCore : fire;
+                    }
+
+                    // 2. Ba chân lô
+                    if (y >= 23 && y <= 30 && (x == 8 || x == 9 || x == 15 || x == 16 || x == 22 || x == 23))
+                    {
+                        c = bronzeDark;
+                    }
+
+                    // 3. Thân lô hình elip
+                    float ex = (x - 15.5f) / 11f;
+                    float ey = (y - 17f) / 7f;
+                    if (ex * ex + ey * ey <= 1f)
+                    {
+                        c = bronze;
+                        if (y >= 20) c = bronzeDark;
+                        if (y == 15 && x % 4 == 0) c = patina;           // Hoa văn rỉ đồng
+                        if (y == 18 && (x == 11 || x == 15 || x == 19)) c = fireCore; // Lỗ thông khí
+                    }
+
+                    // 4. Nắp lô và núm
+                    if (y >= 8 && y <= 10 && x >= 10 && x <= 21) c = bronzeDark;
+                    if (y >= 5 && y <= 7 && x >= 14 && x <= 17) c = patina;
 
                     pixels[y * w + x] = c;
                 }

@@ -115,16 +115,22 @@ namespace SandboxTuTien.Data
         // TYPED CONVENIENCE LOADERS
         // ====================================================================
 
-        /// <summary>Load danh sách Ám Khí từ hidden_weapons.json.</summary>
-        public List<HiddenWeaponData> LoadHiddenWeapons()
+        /// <summary>Load danh sách Pháp Khí từ phap_khi.json.</summary>
+        public List<MagicWeaponData> LoadMagicWeapons()
         {
-            return LoadList<HiddenWeaponData>(Path.Combine("Data", "hidden_weapons.json"));
+            return LoadList<MagicWeaponData>(Path.Combine("Data", "phap_khi.json"));
         }
 
-        /// <summary>Load danh sách Thực Phẩm từ consumables.json.</summary>
+        /// <summary>Load danh sách Đan Dược / Vật Liệu từ consumables.json.</summary>
         public List<ConsumableData> LoadConsumables()
         {
             return LoadList<ConsumableData>(Path.Combine("Data", "consumables.json"));
+        }
+
+        /// <summary>Load danh sách Pháp Thuật từ techniques.json.</summary>
+        public List<TechniqueData> LoadTechniques()
+        {
+            return LoadList<TechniqueData>(Path.Combine("Data", "techniques.json"));
         }
     }
 }

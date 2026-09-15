@@ -1,5 +1,8 @@
+using System.Collections.Generic;
 using SandboxTuTien.Components;
 using SandboxTuTien.Core;
+using SandboxTuTien.Core.Combat;
+using SandboxTuTien.Data.Models;
 
 namespace SandboxTuTien.Entities
 {
@@ -7,18 +10,16 @@ namespace SandboxTuTien.Entities
     /// Thực thể Player — chỉ chứa data, không có logic render.
     /// Theo Component-Based Architecture: Player là một "entity" rỗng
     /// được gắn các Component (CultivationComponent, InventoryComponent, v.v.).
-    ///
-    /// Placeholder cho vị trí, inventory sẽ được mở rộng sau.
     /// </summary>
     public class Player
     {
-        /// <summary>Tên nhân vật.</summary>
+        /// <summary>Đạo hiệu nhân vật.</summary>
         public string Name { get; set; }
 
-        /// <summary>Component tu luyện — quản lý Hồn Lực, cảnh giới, đột phá.</summary>
+        /// <summary>Component tu luyện — quản lý tu vi, cảnh giới, đột phá.</summary>
         public CultivationComponent Cultivation { get; set; }
 
-        /// <summary>Túi đồ của người chơi.</summary>
+        /// <summary>Túi trữ vật của người chơi.</summary>
         public InventoryComponent Inventory { get; set; }
 
         // ====================================================================
@@ -41,16 +42,20 @@ namespace SandboxTuTien.Entities
         /// <summary>
         /// Tạo Player mới với CultivationComponent và InventoryComponent.
         /// </summary>
-        /// <param name="name">Tên nhân vật.</param>
+        /// <param name="name">Đạo hiệu nhân vật.</param>
         /// <param name="eventManager">EventBus trung tâm.</param>
-        /// <param name="innateLevel">Cấp Tiên Thiên Hồn Lực (0-10).</param>
-        /// <param name="innateMultiplier">Hệ số tu luyện (0.0-2.0).</param>
-        public Player(string name, EventManager eventManager,
-                      int innateLevel = 1, float innateMultiplier = 1.0f)
+        /// <param name="techniques">Danh sách Pháp Thuật (techniques.json).</param>
+        /// <param name="innateLevel">Tầng tu vi ban đầu (0-10).</param>
+        /// <param name="spiritRootMultiplier">Phẩm chất Linh Căn (0.0-2.0).</param>
+        /// <param name="spiritRootElement">Hệ Linh Căn.</param>
+        public Player(string name, EventManager eventManager, IReadOnlyList<TechniqueData> techniques,
+                      int innateLevel = 1, float spiritRootMultiplier = 1.0f,
+                      Element spiritRootElement = Element.None)
         {
             Name = name;
 
-            Cultivation = new CultivationComponent(eventManager, innateLevel, innateMultiplier)
+            Cultivation = new CultivationComponent(eventManager, techniques, innateLevel,
+                                                   spiritRootMultiplier, spiritRootElement)
             {
                 OwnerName = name
             };

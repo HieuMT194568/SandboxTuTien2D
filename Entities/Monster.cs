@@ -5,22 +5,27 @@ using SandboxTuTien.Core.Combat;
 namespace SandboxTuTien.Entities
 {
     /// <summary>
-    /// Thực thể Hồn Thú (Quái vật) phục vụ kiểm thử hệ thống chiến đấu.
+    /// Thực thể Yêu Thú. Tuổi (năm tu hành) tăng dần theo thời gian,
+    /// quyết định phẩm giai (Nhất → Cửu Giai), HP, kích thước và phẩm chất Yêu Đan rơi ra.
     /// </summary>
     public class Monster
     {
         public string BaseName { get; set; }
-        
+
         public string Name => GetRankedName();
-        
-        public int Age { get; set; } // Số năm tu vi
+
+        public int Age { get; set; } // Số năm tu hành
+
+        /// <summary>Phẩm giai Yêu Thú (1-9) suy ra từ số năm tu hành.</summary>
+        public int Grade => GetGradeForAge(Age);
+
         public float HP { get; set; }
         public float MaxHP { get; set; }
-        public float BaseMaxHP { get; set; } // HP gốc khi tạo quái
+        public float BaseMaxHP { get; set; } // HP gốc khi tạo Yêu Thú
         public Vector2 Position { get; set; }
         public Element Element { get; set; }
         public bool Active { get; set; }
-        public float Radius { get; set; } // Bán kính va chạm (sẽ tự động tăng theo tuổi)
+        public float Radius { get; set; } // Bán kính va chạm (tự động tăng theo tuổi)
 
         // Các thuộc tính bổ sung nâng cao
         public string Role { get; set; } = "Magic"; // Tank, Speed, Magic
@@ -35,10 +40,17 @@ namespace SandboxTuTien.Entities
 
         /// <summary>Phần lẻ số năm tích lũy giữa các frame (tránh bị cắt khi ép kiểu int).</summary>
         private float _ageAccumulator = 0f;
+
         private readonly Random _random = new();
 
-        /// <summary>Sự kiện kích hoạt khi Hồn Thú chết (để tạo Hồn Hoàn).</summary>
+        /// <summary>Sự kiện kích hoạt khi Yêu Thú chết (để rơi Yêu Đan).</summary>
         public event Action<Monster>? OnKilled;
+
+        private static readonly string[] GradeNames =
+        {
+            "Nhất Giai", "Nhị Giai", "Tam Giai", "Tứ Giai", "Ngũ Giai",
+            "Lục Giai", "Thất Giai", "Bát Giai", "Cửu Giai"
+        };
 
         public Monster(string name, int age, float maxHp, Vector2 position, Element element)
         {
@@ -63,6 +75,31 @@ namespace SandboxTuTien.Entities
         }
 
         /// <summary>
+        /// Phẩm giai theo số năm tu hành: 100 / 300 / 1.000 / 3.000 / 10.000 / 30.000 / 100.000 / 300.000.
+        /// </summary>
+        public static int GetGradeForAge(int age)
+        {
+            return age switch
+            {
+                < 100 => 1,
+                < 300 => 2,
+                < 1000 => 3,
+                < 3000 => 4,
+                < 10000 => 5,
+                < 30000 => 6,
+                < 100000 => 7,
+                < 300000 => 8,
+                _ => 9
+            };
+        }
+
+        /// <summary>Tên phẩm giai, VD: "Tam Giai".</summary>
+        public static string GetGradeName(int grade)
+        {
+            return GradeNames[Math.Clamp(grade, 1, 9) - 1];
+        }
+
+        /// <summary>
         /// Cập nhật bán kính va chạm theo hàm logarit của tuổi thọ.
         /// </summary>
         private void UpdateRadius()
@@ -71,23 +108,21 @@ namespace SandboxTuTien.Entities
         }
 
         /// <summary>
-        /// Tạo tên có tiền tố cảnh giới theo tuổi thọ (Đấu La Đại Lục).
+        /// Tên hiển thị có phẩm giai và vai trò, VD: "Tam Giai Hỏa Vân Lang [Pháp]".
         /// </summary>
         private string GetRankedName()
         {
-            string prefix = Age switch
+            string roleName = Role switch
             {
-                < 100 => "Thap Nien",
-                < 1000 => "Bach Nien",
-                < 10000 => "Thien Nien",
-                < 100000 => "Van Nien",
-                _ => "Muoi Van Nien"
+                "Speed" => "Tốc",
+                "Tank" => "Thủ",
+                _ => "Pháp"
             };
-            return $"{prefix} {BaseName} [{Role}]";
+            return $"{GetGradeName(Grade)} {BaseName} [{roleName}]";
         }
 
         /// <summary>
-        /// Cập nhật tiến hóa và tăng tuổi thọ của Hồn thú theo thời gian.
+        /// Cập nhật tiến hóa và tăng tuổi thọ của Yêu Thú theo thời gian.
         /// </summary>
         public void UpdateEvolution(float deltaTime, float timeScale, Vector2 playerPos)
         {
@@ -99,7 +134,7 @@ namespace SandboxTuTien.Entities
                 RootTimer -= deltaTime;
             }
 
-            // 2. Cập nhật Hoảng sợ (Panic/Fear)
+            // 2. Cập nhật Hoảng sợ (bị uy áp)
             if (PanicTimer > 0)
             {
                 PanicTimer -= deltaTime;
@@ -119,7 +154,7 @@ namespace SandboxTuTien.Entities
             {
                 if (IsAggroed)
                 {
-                    // Chạy đuổi theo người chơi
+                    // Truy đuổi người chơi
                     Vector2 chaseDir = playerPos - Position;
                     if (chaseDir != Vector2.Zero)
                     {
@@ -152,13 +187,13 @@ namespace SandboxTuTien.Entities
                     PoisonTickTimer = 0f;
                     float poisonDmg = MaxHP * 0.02f; // Mất 2% máu tối đa mỗi giây
                     HP -= poisonDmg;
-                    Console.WriteLine($"[Độc Tố] {Name} nhận {poisonDmg:F0} sát thương độc DoT. HP còn: {HP:F0}/{MaxHP:F0}");
-                    
+                    Console.WriteLine($"[Độc Tố] {Name} nhận {poisonDmg:F0} sát thương độc. HP còn: {HP:F0}/{MaxHP:F0}");
+
                     if (HP <= 0)
                     {
                         HP = 0;
                         Active = false;
-                        Console.WriteLine($"[Độc Tố] ☠ {Name} đã gục ngã vì trúng độc tố tích tụ!");
+                        Console.WriteLine($"[Độc Tố] ☠ {Name} đã gục ngã vì độc tố tích tụ!");
                         OnKilled?.Invoke(this);
                         return;
                     }
@@ -170,7 +205,7 @@ namespace SandboxTuTien.Entities
             }
 
             int oldAge = Age;
-            
+
             // Tốc độ tăng trưởng tuổi: khoảng 8 đến 15 năm mỗi giây thực tế
             _ageAccumulator += (float)(_random.NextDouble() * 7.0 + 8.0) * deltaTime;
             int wholeYears = (int)_ageAccumulator;
@@ -195,13 +230,10 @@ namespace SandboxTuTien.Entities
 
                 UpdateRadius();
 
-                // Kiểm tra xem quái vật có đột phá tiền tố cảnh giới không
-                string oldPrefix = oldAge switch { < 100 => "Thap Nien", < 1000 => "Bach Nien", < 10000 => "Thien Nien", < 100000 => "Van Nien", _ => "Muoi Van Nien" };
-                string newPrefix = Age switch { < 100 => "Thap Nien", < 1000 => "Bach Nien", < 10000 => "Thien Nien", < 100000 => "Van Nien", _ => "Muoi Van Nien" };
-                
-                if (oldPrefix != newPrefix)
+                int oldGrade = GetGradeForAge(oldAge);
+                if (Grade != oldGrade)
                 {
-                    Console.WriteLine($"[Tiến Hóa] ✦ Hồn Thú {BaseName} đã tiến hóa đột phá thành công: {oldPrefix} → {newPrefix} ({Age} năm)!");
+                    Console.WriteLine($"[Tiến Hóa] ✦ Yêu Thú {BaseName} tấn thăng: {GetGradeName(oldGrade)} → {GetGradeName(Grade)} ({Age} năm)!");
                 }
             }
         }
@@ -214,24 +246,24 @@ namespace SandboxTuTien.Entities
             isCounter = CheckCounter(attackElement, Element);
             finalDamage = isCounter ? baseDamage * 1.5f : baseDamage;
 
-            // Xử lý phản ứng thiêu đốt giải độc (Fire purge)
+            // Hỏa thiêu tịnh độc tố
             if (attackElement == Element.Fire && PoisonTimer > 0)
             {
                 PoisonTimer = 0f;
-                Console.WriteLine($"[Hỏa Giải Độc] ★ Ngọn lửa bốc cháy dữ dội tiêu hủy toàn bộ chất độc trên cơ thể {Name}!");
+                Console.WriteLine($"[Hỏa Tịnh Độc] ★ Liệt hỏa thiêu rụi toàn bộ độc tố trên người {Name}!");
             }
 
             HP -= finalDamage;
 
-            Console.WriteLine($"[Chiến Đấu] {Name} ({Element}) nhận {finalDamage:F0} sát thương từ đạn hệ {attackElement}. " +
-                              (isCounter ? "★ KHẮC HỆ (+50% Sát thương)!" : "") +
+            Console.WriteLine($"[Chiến Đấu] {Name} ({Element}) nhận {finalDamage:F0} sát thương hệ {attackElement}. " +
+                              (isCounter ? "★ KHẮC HỆ (+50% sát thương)!" : "") +
                               $" HP còn: {HP:F0}/{MaxHP:F0}");
 
             if (HP <= 0)
             {
                 HP = 0;
                 Active = false;
-                Console.WriteLine($"[Chiến Đấu] ☠ Hồn Thú {Name} ({Age} năm) đã bị tiêu diệt!");
+                Console.WriteLine($"[Chiến Đấu] ☠ Yêu Thú {Name} ({Age} năm) đã bị trảm sát!");
                 OnKilled?.Invoke(this);
             }
         }

@@ -8,21 +8,22 @@ namespace SandboxTuTien.Core
     // Mỗi event là một POCO class chứa dữ liệu context của sự kiện.
     // ========================================================================
 
-    /// <summary>Sự kiện đột phá thành công — hấp thu Hồn Hoàn thành công.</summary>
+    /// <summary>Sự kiện đột phá bình cảnh thành công (vượt xung quan hoặc Thiên Kiếp).</summary>
     public class OnBreakthroughSuccessEvent
     {
         public string PlayerName { get; set; } = string.Empty;
-        public string NewRealm { get; set; } = string.Empty;
-        public int NewLevel { get; set; }
-        public int SoulRingNumber { get; set; }
+        public int Level { get; set; }
+        public int BreakthroughNumber { get; set; }
+        public bool WasHeavenlyTribulation { get; set; }
     }
 
-    /// <summary>Sự kiện đột phá thất bại — cơ thể không chịu nổi năng lượng Hồn Hoàn.</summary>
+    /// <summary>Sự kiện đột phá thất bại — đạo cơ tổn hại, rớt tu vi.</summary>
     public class OnBreakthroughFailedEvent
     {
         public string PlayerName { get; set; } = string.Empty;
         public string Reason { get; set; } = string.Empty;
         public float SuccessRate { get; set; }
+        public int LevelLost { get; set; }
     }
 
     /// <summary>Sự kiện nhân vật tử vong.</summary>
@@ -32,16 +33,28 @@ namespace SandboxTuTien.Core
         public string CauseOfDeath { get; set; } = string.Empty;
     }
 
-    /// <summary>Sự kiện hấp thu Hồn Hoàn thành công.</summary>
-    public class OnSoulRingAbsorbedEvent
+    /// <summary>Sự kiện lĩnh ngộ Pháp Thuật mới sau khi đột phá.</summary>
+    public class OnTechniqueLearnedEvent
     {
         public string PlayerName { get; set; } = string.Empty;
-        public int RingNumber { get; set; }
-        public int SoulBeastAge { get; set; }
-        public string SoulSkillName { get; set; } = string.Empty;
+        public string TechniqueName { get; set; } = string.Empty;
+        public int Tier { get; set; }
     }
 
-    /// <summary>Sự kiện thay đổi cảnh giới (danh hiệu).</summary>
+    /// <summary>
+    /// Một đợt lôi kiếp giáng xuống. Game1 lắng nghe để sinh các tia sét có báo hiệu
+    /// quanh người chơi; trúng sét thì gọi CultivationComponent.TakeTribulationDamage.
+    /// </summary>
+    public class OnLightningStrikeEvent
+    {
+        public string PlayerName { get; set; } = string.Empty;
+        public int Wave { get; set; }
+        public int TotalWaves { get; set; }
+        public int StrikeCount { get; set; }
+        public float Damage { get; set; }
+    }
+
+    /// <summary>Sự kiện thay đổi đại cảnh giới.</summary>
     public class OnRealmChangedEvent
     {
         public string PlayerName { get; set; } = string.Empty;
@@ -50,7 +63,7 @@ namespace SandboxTuTien.Core
         public int Level { get; set; }
     }
 
-    /// <summary>Sự kiện tăng cấp Hồn Lực.</summary>
+    /// <summary>Sự kiện tăng tầng tu vi.</summary>
     public class OnLevelUpEvent
     {
         public string PlayerName { get; set; } = string.Empty;
@@ -58,12 +71,13 @@ namespace SandboxTuTien.Core
         public int NewLevel { get; set; }
     }
 
-    /// <summary>Sự kiện chạm bình cảnh (nút thắt cần Hồn Hoàn).</summary>
+    /// <summary>Sự kiện chạm bình cảnh (cần đột phá mới tu luyện tiếp được).</summary>
     public class OnBottleneckReachedEvent
     {
         public string PlayerName { get; set; } = string.Empty;
         public int Level { get; set; }
         public string CurrentRealm { get; set; } = string.Empty;
+        public bool IsHeavenlyTribulation { get; set; }
     }
 
     // ========================================================================

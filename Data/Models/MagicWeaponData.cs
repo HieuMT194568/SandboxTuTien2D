@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace SandboxTuTien.Data.Models
 {
     /// <summary>
-    /// Thông số chiến đấu của Ám Khí (combat statistics).
+    /// Thông số chiến đấu của Pháp Khí (combat statistics).
     /// Ánh xạ từ JSON "combat_stats" object.
     /// </summary>
     public class CombatStats
@@ -17,23 +17,20 @@ namespace SandboxTuTien.Data.Models
         [JsonPropertyName("range")]
         public float Range { get; set; }
 
-        /// <summary>Số projectile phóng ra mỗi lần sử dụng.</summary>
+        /// <summary>Số phi kiếm/đạn phóng ra mỗi lần sử dụng.</summary>
         [JsonPropertyName("projectile_count")]
         public int ProjectileCount { get; set; }
 
-        /// <summary>True nếu đòn đánh không phát tiếng (VD: Vô Thanh Tụ Tiễn).</summary>
+        /// <summary>True nếu đòn đánh không kinh động Yêu Thú (không gây Aggro).</summary>
         [JsonPropertyName("silent_attack")]
         public bool SilentAttack { get; set; }
     }
 
     /// <summary>
-    /// POCO class biểu diễn dữ liệu Ám Khí (Hidden Weapon).
-    /// Ánh xạ trực tiếp từ cấu trúc JSON trong CONTEXT_TUTIEN.md mục 4.A.
-    /// 
-    /// Ví dụ: "Vô Thanh Tụ Tiễn" — ám khí phóng 3 mũi, gây poison,
-    /// yêu cầu Thiết Mẫu + Lò Xo Cơ Quan để chế tạo.
+    /// POCO class biểu diễn dữ liệu Pháp Khí (Phi Kiếm, Kiếm Hạp...).
+    /// Ánh xạ trực tiếp từ Content/Data/phap_khi.json.
     /// </summary>
-    public class HiddenWeaponData
+    public class MagicWeaponData
     {
         [JsonPropertyName("item_id")]
         public string ItemId { get; set; } = string.Empty;
@@ -41,11 +38,15 @@ namespace SandboxTuTien.Data.Models
         [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
 
-        /// <summary>Luôn là "HIDDEN_WEAPON".</summary>
+        /// <summary>Luôn là "MAGIC_WEAPON".</summary>
         [JsonPropertyName("type")]
         public string Type { get; set; } = string.Empty;
 
-        /// <summary>Cảnh giới tối thiểu (tier) cần đạt để sử dụng/chế tạo.</summary>
+        /// <summary>Hệ nguyên tố của đòn đánh: None, Fire, Wood, Ice.</summary>
+        [JsonPropertyName("element")]
+        public string Element { get; set; } = "None";
+
+        /// <summary>Cảnh giới tối thiểu (chỉ số CultivationRealm) cần đạt để chế tạo.</summary>
         [JsonPropertyName("tier_required")]
         public int TierRequired { get; set; }
 
@@ -57,7 +58,7 @@ namespace SandboxTuTien.Data.Models
         [JsonPropertyName("effects")]
         public List<ItemEffect> Effects { get; set; } = new();
 
-        /// <summary>Công thức chế tác (danh sách nguyên liệu).</summary>
+        /// <summary>Công thức luyện khí (danh sách nguyên liệu).</summary>
         [JsonPropertyName("crafting_recipe")]
         public List<CraftingIngredient> CraftingRecipe { get; set; } = new();
     }
