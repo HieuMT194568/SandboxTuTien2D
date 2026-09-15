@@ -108,7 +108,7 @@ namespace SandboxTuTien.Entities
                     if (FormationType == 1)
                     {
                         // Sát thương 10, bay nhanh, không kinh động Yêu Thú (Silent)
-                        pool.Spawn(Position, dir, 10f, Range, 450f, Element.None, isSilent: true);
+                        pool.Spawn(Position, dir, 10f, Range, 450f, Element.None, isSilent: true, owner: ProjectileOwner.Formation);
                         AmmoCount -= 1;
                         CooldownTimer = FireRate;
                         Console.WriteLine($"[Trận Pháp] ⚙ {Name} tại {Position.X:F0},{Position.Y:F0} phóng châm vào {target.Name}. Linh lực: {AmmoCount}/{MaxAmmo}");
@@ -118,7 +118,7 @@ namespace SandboxTuTien.Entities
                         // Kiếm khí bạo kích 80, tiêu hao 2 phần linh lực
                         if (AmmoCount >= 2)
                         {
-                            pool.Spawn(Position, dir, 80f, Range, 400f, Element.None, isSilent: false);
+                            pool.Spawn(Position, dir, 80f, Range, 400f, Element.None, isSilent: false, owner: ProjectileOwner.Formation);
                             AmmoCount -= 2;
                             CooldownTimer = FireRate;
                             Console.WriteLine($"[Trận Pháp] ⚙ {Name} tại {Position.X:F0},{Position.Y:F0} chém kiếm khí vào {target.Name}! Linh lực: {AmmoCount}/{MaxAmmo}");
@@ -127,7 +127,7 @@ namespace SandboxTuTien.Entities
                     else if (FormationType == 3)
                     {
                         // Vạn Độc Trận: phun độc vụ diện rộng (AoE)
-                        pool.Spawn(Position, dir, 15f, Range, 300f, Element.Wood, isSilent: false);
+                        pool.Spawn(Position, dir, 15f, Range, 300f, Element.Wood, isSilent: false, owner: ProjectileOwner.Formation);
                         AmmoCount -= 1;
                         CooldownTimer = FireRate;
 
@@ -136,7 +136,7 @@ namespace SandboxTuTien.Entities
                         {
                             if (m.Active && Vector2.Distance(target.Position, m.Position) <= 80f)
                             {
-                                m.PoisonTimer = 5.0f;
+                                m.StatusEffects.Apply(new StatusEffect(StatusType.Poison, 5f, 0f, 2f)); // 2% HP tối đa/giây
                                 m.IsAggroed = true;
                             }
                         }

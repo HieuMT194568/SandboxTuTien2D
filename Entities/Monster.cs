@@ -1,5 +1,6 @@
 using System;
 using Microsoft.Xna.Framework;
+using SandboxTuTien.Components;
 using SandboxTuTien.Core.Combat;
 
 namespace SandboxTuTien.Entities
@@ -27,14 +28,13 @@ namespace SandboxTuTien.Entities
         public bool Active { get; set; }
         public float Radius { get; set; } // Bán kính va chạm (tự động tăng theo tuổi)
 
-        // Các thuộc tính bổ sung nâng cao
         public string Role { get; set; } = "Magic"; // Tank, Speed, Magic
-        public float RootTimer { get; set; } = 0f;
-        public float PoisonTimer { get; set; } = 0f;
-        public float PoisonTickTimer { get; set; } = 0f;
         public float PanicTimer { get; set; } = 0f;
         public Vector2 PanicSource { get; set; } = Vector2.Zero;
         public bool IsAggroed { get; set; } = false;
+
+        /// <summary>Hiệu ứng trạng thái (trói, độc, thiêu đốt, làm chậm...).</summary>
+        public StatusEffectComponent StatusEffects { get; } = new();
 
         private Vector2 _roamDir = Vector2.Zero;
 
@@ -100,6 +100,14 @@ namespace SandboxTuTien.Entities
         }
 
         /// <summary>
+        /// Hệ số thời gian trạng thái theo vai trò: Yêu Thú tốc độ bị trói lâu hơn (1.5s → 3.5s).
+        /// </summary>
+        public float GetStatusDurationMultiplier(StatusType status)
+        {
+            return status == StatusType.Root && Role == "Speed" ? 3.5f / 1.5f : 1f;
+        }
+
+        /// <summary>
         /// Cập nhật bán kính va chạm theo hàm logarit của tuổi thọ.
         /// </summary>
         private void UpdateRadius()
@@ -122,44 +130,53 @@ namespace SandboxTuTien.Entities
         }
 
         /// <summary>
-        /// Cập nhật tiến hóa và tăng tuổi thọ của Yêu Thú theo thời gian.
+        /// Cập nhật trạng thái, di chuyển và tiến hóa tuổi thọ của Yêu Thú.
         /// </summary>
         public void UpdateEvolution(float deltaTime, float timeScale, Vector2 playerPos)
         {
             if (!Active) return;
 
-            // 1. Cập nhật Trói chân (Root)
-            if (RootTimer > 0)
+            // 1. Hiệu ứng trạng thái và sát thương theo thời gian
+            float damageOverTime = StatusEffects.Update(deltaTime, MaxHP);
+            if (damageOverTime > 0f)
             {
-                RootTimer -= deltaTime;
+                HP -= damageOverTime;
+                Console.WriteLine($"[Sát Thương Theo Thời Gian] {Name} nhận {damageOverTime:F0} sát thương. HP còn: {Math.Max(0f, HP):F0}/{MaxHP:F0}");
+
+                if (HP <= 0)
+                {
+                    HP = 0;
+                    Active = false;
+                    Console.WriteLine($"[Độc Tố] ☠ {Name} đã gục ngã!");
+                    OnKilled?.Invoke(this);
+                    return;
+                }
             }
 
-            // 2. Cập nhật Hoảng sợ (bị uy áp)
+            bool canMove = StatusEffects.CanMove;
+            float speedMultiplier = StatusEffects.SpeedMultiplier;
+
+            // 2. Hoảng sợ (bị uy áp) thì bỏ chạy
             if (PanicTimer > 0)
             {
                 PanicTimer -= deltaTime;
                 Vector2 fleeDir = Position - PanicSource;
-                if (fleeDir != Vector2.Zero)
+                if (canMove && fleeDir != Vector2.Zero)
                 {
                     fleeDir.Normalize();
-                    Position += fleeDir * 120f * deltaTime; // Chạy nhanh
-                    Position = new Vector2(
-                        Math.Clamp(Position.X, 16f, 2000f - 16f),
-                        Math.Clamp(Position.Y, 16f, 2000f - 16f)
-                    );
+                    Position += fleeDir * 120f * speedMultiplier * deltaTime;
                 }
             }
-            // Di chuyển tự do nếu không bị trói và không bị hoảng sợ
-            else if (RootTimer <= 0)
+            // 3. Truy đuổi hoặc lang thang
+            else if (canMove)
             {
                 if (IsAggroed)
                 {
-                    // Truy đuổi người chơi
                     Vector2 chaseDir = playerPos - Position;
                     if (chaseDir != Vector2.Zero)
                     {
                         chaseDir.Normalize();
-                        Position += chaseDir * 50f * deltaTime;
+                        Position += chaseDir * 50f * speedMultiplier * deltaTime;
                     }
                 }
                 else
@@ -169,64 +186,27 @@ namespace SandboxTuTien.Entities
                         _roamDir = new Vector2((float)(_random.NextDouble() * 2 - 1), (float)(_random.NextDouble() * 2 - 1));
                         if (_roamDir != Vector2.Zero) _roamDir.Normalize();
                     }
-                    Position += _roamDir * 25f * deltaTime;
-                }
-                Position = new Vector2(
-                    Math.Clamp(Position.X, 16f, 2000f - 16f),
-                    Math.Clamp(Position.Y, 16f, 2000f - 16f)
-                );
-            }
-
-            // 3. Cập nhật Độc tố DoT
-            if (PoisonTimer > 0)
-            {
-                PoisonTimer -= deltaTime;
-                PoisonTickTimer += deltaTime;
-                if (PoisonTickTimer >= 1.0f)
-                {
-                    PoisonTickTimer = 0f;
-                    float poisonDmg = MaxHP * 0.02f; // Mất 2% máu tối đa mỗi giây
-                    HP -= poisonDmg;
-                    Console.WriteLine($"[Độc Tố] {Name} nhận {poisonDmg:F0} sát thương độc. HP còn: {HP:F0}/{MaxHP:F0}");
-
-                    if (HP <= 0)
-                    {
-                        HP = 0;
-                        Active = false;
-                        Console.WriteLine($"[Độc Tố] ☠ {Name} đã gục ngã vì độc tố tích tụ!");
-                        OnKilled?.Invoke(this);
-                        return;
-                    }
+                    Position += _roamDir * 25f * speedMultiplier * deltaTime;
                 }
             }
-            else
-            {
-                PoisonTickTimer = 0f;
-            }
 
+            Position = new Vector2(
+                Math.Clamp(Position.X, 16f, 2000f - 16f),
+                Math.Clamp(Position.Y, 16f, 2000f - 16f)
+            );
+
+            // 4. Tiến hóa tuổi thọ: khoảng 8 đến 15 năm mỗi giây thực tế
             int oldAge = Age;
-
-            // Tốc độ tăng trưởng tuổi: khoảng 8 đến 15 năm mỗi giây thực tế
             _ageAccumulator += (float)(_random.NextDouble() * 7.0 + 8.0) * deltaTime;
             int wholeYears = (int)_ageAccumulator;
             _ageAccumulator -= wholeYears;
             Age += wholeYears;
 
-            // Cập nhật lại HP và kích thước nếu tuổi thay đổi
             if (Age != oldAge)
             {
                 float oldMaxHP = MaxHP;
                 MaxHP = BaseMaxHP * (1f + Age / 1500f);
-
-                // Hồi phục HP theo tỷ lệ
-                if (oldMaxHP > 0)
-                {
-                    HP = (HP / oldMaxHP) * MaxHP;
-                }
-                else
-                {
-                    HP = MaxHP;
-                }
+                HP = oldMaxHP > 0 ? (HP / oldMaxHP) * MaxHP : MaxHP;
 
                 UpdateRadius();
 
@@ -239,45 +219,25 @@ namespace SandboxTuTien.Entities
         }
 
         /// <summary>
-        /// Nhận sát thương và tính toán khắc chế thuộc tính.
+        /// Nhận sát thương đã tính (khắc hệ, chí mạng do CombatSystem xử lý). Trả về true nếu bị trảm sát.
         /// </summary>
-        public void TakeDamage(float baseDamage, Element attackElement, out float finalDamage, out bool isCounter)
+        public bool TakeDamage(float damage, Element attackElement, bool isCounter)
         {
-            isCounter = CheckCounter(attackElement, Element);
-            finalDamage = isCounter ? baseDamage * 1.5f : baseDamage;
+            if (!Active) return false;
 
-            // Hỏa thiêu tịnh độc tố
-            if (attackElement == Element.Fire && PoisonTimer > 0)
-            {
-                PoisonTimer = 0f;
-                Console.WriteLine($"[Hỏa Tịnh Độc] ★ Liệt hỏa thiêu rụi toàn bộ độc tố trên người {Name}!");
-            }
+            HP -= damage;
 
-            HP -= finalDamage;
+            Console.WriteLine($"[Chiến Đấu] {Name} ({Element}) nhận {damage:F0} sát thương hệ {attackElement}. " +
+                              (isCounter ? "★ KHẮC HỆ! " : "") +
+                              $"HP còn: {Math.Max(0f, HP):F0}/{MaxHP:F0}");
 
-            Console.WriteLine($"[Chiến Đấu] {Name} ({Element}) nhận {finalDamage:F0} sát thương hệ {attackElement}. " +
-                              (isCounter ? "★ KHẮC HỆ (+50% sát thương)!" : "") +
-                              $" HP còn: {HP:F0}/{MaxHP:F0}");
+            if (HP > 0) return false;
 
-            if (HP <= 0)
-            {
-                HP = 0;
-                Active = false;
-                Console.WriteLine($"[Chiến Đấu] ☠ Yêu Thú {Name} ({Age} năm) đã bị trảm sát!");
-                OnKilled?.Invoke(this);
-            }
-        }
-
-        /// <summary>
-        /// Kiểm tra vòng tròn khắc chế: Hỏa > Mộc > Băng > Hỏa.
-        /// </summary>
-        private bool CheckCounter(Element attacker, Element defender)
-        {
-            if (attacker == Element.None || defender == Element.None) return false;
-
-            return (attacker == Element.Fire && defender == Element.Wood) ||
-                   (attacker == Element.Wood && defender == Element.Ice) ||
-                   (attacker == Element.Ice && defender == Element.Fire);
+            HP = 0;
+            Active = false;
+            Console.WriteLine($"[Chiến Đấu] ☠ Yêu Thú {Name} ({Age} năm) đã bị trảm sát!");
+            OnKilled?.Invoke(this);
+            return true;
         }
 
         /// <summary>

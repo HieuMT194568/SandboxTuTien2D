@@ -1,8 +1,36 @@
 using System;
 using System.Collections.Generic;
+using Microsoft.Xna.Framework;
+using SandboxTuTien.Core.Combat;
 
 namespace SandboxTuTien.Core
 {
+    /// <summary>Một đòn đánh gây sát thương lên Yêu Thú (để hiện số sát thương, rung màn, hạt).</summary>
+    public class OnDamageDealtEvent
+    {
+        public Vector2 Position { get; set; }
+        public Vector2 ImpactPosition { get; set; }
+        public float Amount { get; set; }
+        public Element Element { get; set; }
+        public bool IsCounter { get; set; }
+        public bool IsCrit { get; set; }
+    }
+
+    /// <summary>Một hiệu ứng trạng thái vừa được áp lên mục tiêu.</summary>
+    public class OnStatusAppliedEvent
+    {
+        public Vector2 Position { get; set; }
+        public StatusType Status { get; set; }
+        public float Duration { get; set; }
+    }
+
+    /// <summary>Phản ứng nguyên tố xảy ra (VD: Hỏa tịnh độc).</summary>
+    public class OnElementalReactionEvent
+    {
+        public Vector2 Position { get; set; }
+        public string ReactionName { get; set; } = string.Empty;
+    }
+
     // ========================================================================
     // EVENT DATA CLASSES
     // Mỗi event là một POCO class chứa dữ liệu context của sự kiện.

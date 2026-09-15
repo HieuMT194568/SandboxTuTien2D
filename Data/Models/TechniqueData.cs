@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace SandboxTuTien.Data.Models
@@ -55,5 +56,19 @@ namespace SandboxTuTien.Data.Models
 
         [JsonPropertyName("speed")]
         public float Speed { get; set; }
+
+        /// <summary>Thời gian hồi chiêu (giây).</summary>
+        [JsonPropertyName("cooldown")]
+        public float Cooldown { get; set; }
+
+        /// <summary>Hiệu ứng khi trúng mục tiêu (APPLY_STATUS).</summary>
+        [JsonPropertyName("effects")]
+        public List<ItemEffect> Effects { get; set; } = new();
+
+        private IReadOnlyList<SandboxTuTien.Core.Combat.OnHitEffect>? _onHitEffects;
+
+        /// <summary>Hiệu ứng trạng thái khi trúng, dựng sẵn từ Effects.</summary>
+        [JsonIgnore]
+        public IReadOnlyList<SandboxTuTien.Core.Combat.OnHitEffect> OnHitEffects => _onHitEffects ??= Effects.ToOnHitEffects();
     }
 }

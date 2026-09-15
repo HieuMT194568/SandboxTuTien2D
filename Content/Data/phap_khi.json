@@ -12,7 +12,8 @@
       "silent_attack": true
     },
     "effects": [
-      { "type": "APPLY_DEBUFF", "status": "POISON", "value": 10, "duration": 5 }
+      { "type": "APPLY_DEBUFF", "status": "POISON", "value": 10, "duration": 5 },
+      { "type": "APPLY_STATUS", "status": "ROOT", "duration": 1.5 }
     ],
     "crafting_recipe": [
       { "item_id": "han_thiet", "quantity": 1 },

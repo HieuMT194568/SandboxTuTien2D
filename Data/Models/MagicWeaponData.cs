@@ -61,5 +61,11 @@ namespace SandboxTuTien.Data.Models
         /// <summary>Công thức luyện khí (danh sách nguyên liệu).</summary>
         [JsonPropertyName("crafting_recipe")]
         public List<CraftingIngredient> CraftingRecipe { get; set; } = new();
+
+        private IReadOnlyList<SandboxTuTien.Core.Combat.OnHitEffect>? _onHitEffects;
+
+        /// <summary>Hiệu ứng trạng thái khi trúng mục tiêu, dựng sẵn từ Effects.</summary>
+        [JsonIgnore]
+        public IReadOnlyList<SandboxTuTien.Core.Combat.OnHitEffect> OnHitEffects => _onHitEffects ??= Effects.ToOnHitEffects();
     }
 }

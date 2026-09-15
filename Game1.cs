@@ -125,6 +125,14 @@ public class Game1 : Game
     private GameTimeManager _gameTimeManager = null!;
     private DataLoader _dataLoader = null!;
     private CultivationSystem _cultivationSystem = null!;
+    private CombatSystem _combatSystem = null!;
+    private SkillSystem _skillSystem = null!;
+
+    /// <summary>Nội tại Vạn Độc Thể: 25% tẩm độc 2% HP/giây trong 5 giây.</summary>
+    private static readonly IReadOnlyList<OnHitEffect> VanDocTheOnHit = new[]
+    {
+        new OnHitEffect(StatusType.Poison, 5f, 0f, 2f, 0.25f)
+    };
 
     // ========================================================================
     // ĐỐI TƯỢNG VÀ COMBAT
@@ -204,6 +212,8 @@ public class Game1 : Game
 
         // 5. Khởi tạo Projectile Pool
         _projectilePool = new ProjectilePool();
+        _combatSystem = new CombatSystem(_monsters, _projectilePool, _eventManager);
+        _skillSystem = new SkillSystem(_projectilePool);
 
         // 6. Tạo Player — Thiên Linh Căn hệ Hỏa, bắt đầu từ Luyện Khí tầng 1
         _player = new Player(
@@ -311,6 +321,7 @@ public class Game1 : Game
         _gameTimeManager.Update(gameTime);
         _cultivationSystem.Update(gameTime);
         _projectilePool.Update(deltaTime);
+        _skillSystem.Update(deltaTime);
 
         // Cập nhật chuyển động người chơi
         UpdatePlayerMovement(currentKeyState, deltaTime);
@@ -411,7 +422,8 @@ public class Game1 : Game
             }
         }
 
-        HandleProjectileCollisions();
+        _combatSystem.PlayerBonusOnHit = _player.Cultivation.HasVanDocThe ? VanDocTheOnHit : Array.Empty<OnHitEffect>();
+        _combatSystem.Update();
         HandleInput(currentKeyState, currentMouseState);
         UpdateWindowTitle();
 
@@ -544,6 +556,9 @@ public class Game1 : Game
             Vector2 monsterOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
             float scale = (monster.Radius / (tex.Width / 2f)) * 1.2f;
             Color drawColor = monster.Age >= 100000 ? Color.Red : Color.White;
+            if (monster.StatusEffects.Has(StatusType.Poison)) drawColor = Color.Lerp(drawColor, Color.MediumPurple, 0.45f);
+            if (monster.StatusEffects.Has(StatusType.Burn)) drawColor = Color.Lerp(drawColor, Color.OrangeRed, 0.35f);
+            if (!monster.StatusEffects.CanMove) drawColor = Color.Lerp(drawColor, Color.LimeGreen, 0.35f);
 
             _spriteBatch.Draw(tex, monster.Position, null, drawColor, 0f,
                               monsterOrigin, scale, SpriteEffects.None, 0f);
@@ -1025,88 +1040,23 @@ public class Game1 : Game
     private void TriggerTechnique(int slot, Vector2 targetPos)
     {
         var cult = _player.Cultivation;
-        if (cult.CurrentState == CultivationState.Dead || cult.CurrentState == CultivationState.Breakthrough) return;
-
         TechniqueData? technique = slot == 1 ? cult.Skill1 : cult.Skill2;
 
-        if (technique == null)
+        var result = _skillSystem.TryCast(cult, technique, _player.Position, targetPos);
+        string? message = result switch
         {
-            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 35), $"Pháp thuật {slot} chưa lĩnh ngộ!", Color.OrangeRed));
-            return;
-        }
+            CastResult.Success => $"{technique!.Name}!",
+            CastResult.NotLearned => $"Pháp thuật {slot} chưa lĩnh ngộ!",
+            CastResult.NotEnoughSpiritPower => "Không đủ Linh Lực!",
+            CastResult.OnCooldown => $"Đang hồi chiêu ({_skillSystem.GetCooldownRemaining(technique!.Id):F1}s)",
+            _ => null
+        };
+        if (message == null) return;
 
-        if (!cult.ConsumeSpiritPower(technique.SPCost))
-        {
-            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 35), "Không đủ Linh Lực!", Color.Red));
-            return;
-        }
-
-        CastTechnique(technique, targetPos);
-        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 55), $"{technique.Name}!", Color.YellowGreen, 1.5f, 1.2f));
-    }
-
-    /// <summary>
-    /// Phóng pháp thuật theo kiểu định nghĩa trong techniques.json:
-    /// "fan" (quạt đều), "barrage" (chuỗi liên tiếp lệch ngẫu nhiên), "nova" (tỏa tròn 360 độ).
-    /// </summary>
-    private void CastTechnique(TechniqueData technique, Vector2 targetPos)
-    {
-        Element element = ElementExtensions.ParseElement(technique.Element);
-        Vector2 center = _player.Position;
-        Vector2 dir = targetPos - center;
-        if (dir == Vector2.Zero) dir = new Vector2(1, 0);
-        else dir.Normalize();
-
-        float baseAngle = (float)Math.Atan2(dir.Y, dir.X);
-        int count = Math.Max(1, technique.Count);
-
-        switch (technique.Pattern)
-        {
-            case "nova":
-            {
-                float step = (float)(Math.PI * 2 / count);
-                for (int i = 0; i < count; i++)
-                {
-                    _projectilePool.Spawn(center, AngleToVector(step * i), technique.Damage, technique.Range, technique.Speed, element);
-                }
-                break;
-            }
-
-            case "barrage":
-            {
-                for (int i = 0; i < count; i++)
-                {
-                    float angle = baseAngle + (float)(_random.NextDouble() - 0.5) * technique.Spread;
-                    Vector2 bulletDir = AngleToVector(angle);
-                    _projectilePool.Spawn(center + bulletDir * (i * technique.Spacing), bulletDir, technique.Damage, technique.Range, technique.Speed, element);
-                }
-                break;
-            }
-
-            default: // "fan"
-            {
-                if (count == 1)
-                {
-                    _projectilePool.Spawn(center, dir, technique.Damage, technique.Range, technique.Speed, element);
-                    break;
-                }
-
-                float step = technique.Spread / (count - 1);
-                float startAngle = baseAngle - technique.Spread / 2f;
-                for (int i = 0; i < count; i++)
-                {
-                    _projectilePool.Spawn(center, AngleToVector(startAngle + step * i), technique.Damage, technique.Range, technique.Speed, element);
-                }
-                break;
-            }
-        }
-
-        Console.WriteLine($"[Pháp Thuật] ⚡ {_player.Name} thi triển: {technique.Name} (Sát thương: {technique.Damage}, Linh lực: {technique.SPCost})");
-    }
-
-    private static Vector2 AngleToVector(float angle)
-    {
-        return new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
+        bool success = result == CastResult.Success;
+        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, success ? 55 : 35), message,
+                                            success ? Color.YellowGreen : Color.OrangeRed,
+                                            success ? 1.5f : 1.2f, success ? 1.2f : 1.0f));
     }
 
     private void PlaceFormation()
@@ -1184,6 +1134,7 @@ public class Game1 : Game
         int count = 1;
         bool silent = false;
         Element element = Element.None;
+        IReadOnlyList<OnHitEffect> effects = Array.Empty<OnHitEffect>();
 
         if (weapon != null)
         {
@@ -1192,6 +1143,7 @@ public class Game1 : Game
             count = Math.Max(1, weapon.CombatStats?.ProjectileCount ?? 1);
             silent = weapon.CombatStats?.SilentAttack ?? false;
             element = ElementExtensions.ParseElement(weapon.Element);
+            effects = weapon.OnHitEffects;
         }
 
         float baseAngle = (float)Math.Atan2(dir.Y, dir.X);
@@ -1199,7 +1151,7 @@ public class Game1 : Game
 
         if (count == 1)
         {
-            _projectilePool.Spawn(center, dir, damage, range, speed, element, silent);
+            _projectilePool.Spawn(center, dir, damage, range, speed, element, silent, effects);
         }
         else
         {
@@ -1209,7 +1161,7 @@ public class Game1 : Game
 
             for (int i = 0; i < count; i++)
             {
-                _projectilePool.Spawn(center, AngleToVector(startAngle + step * i), damage, range, speed, element, silent);
+                _projectilePool.Spawn(center, CombatMath.AngleToVector(startAngle + step * i), damage, range, speed, element, silent, effects);
             }
         }
 
@@ -1251,55 +1203,6 @@ public class Game1 : Game
         _monsters.Add(m);
         _floatingTexts.Add(new FloatingText(spawnPos, $"Xuất hiện: {m.Name}", Color.Tomato));
         Console.WriteLine($"[Hệ Thống] Đã sinh Yêu Thú '{m.Name}' {age} năm ({elem}) tại {spawnPos}");
-    }
-
-    private void HandleProjectileCollisions()
-    {
-        foreach (var proj in _projectilePool.Projectiles)
-        {
-            if (!proj.Active) continue;
-
-            foreach (var monster in _monsters)
-            {
-                if (!monster.Active) continue;
-
-                if (monster.CheckCollision(proj.Position))
-                {
-                    proj.Active = false;
-
-                    // Đòn đánh không ẩn thân sẽ kinh động Yêu Thú
-                    if (!proj.IsSilent)
-                    {
-                        monster.IsAggroed = true;
-                    }
-
-                    // Mộc hệ mạnh trói chân, Yêu Thú tốc độ bị trói lâu hơn
-                    if (proj.Element == Element.Wood && proj.Damage > 30f)
-                    {
-                        float rootDur = (monster.Role == "Speed") ? 3.5f : 1.5f;
-                        monster.RootTimer = rootDur;
-                        _floatingTexts.Add(new FloatingText(monster.Position - new Vector2(0, 30), $"Trói chân ({rootDur:F1}s)", Color.LimeGreen, 1.5f));
-                    }
-
-                    // Vạn Độc Thể: 25% tẩm độc
-                    if (_player.Cultivation.HasVanDocThe && _random.NextDouble() < 0.25)
-                    {
-                        monster.PoisonTimer = 5.0f;
-                        _floatingTexts.Add(new FloatingText(monster.Position - new Vector2(0, 45), "Trúng độc!", Color.Purple, 1.2f));
-                    }
-
-                    monster.TakeDamage(proj.Damage, proj.Element, out float finalDmg, out bool isCounter);
-
-                    Color txtColor = isCounter ? Color.Red : Color.Orange;
-                    string dmgText = isCounter ? $"-{finalDmg:F0} KHẮC HỆ!" : $"-{finalDmg:F0}";
-                    _floatingTexts.Add(new FloatingText(monster.Position - new Vector2(0, 15), dmgText, txtColor, 1.3f, isCounter ? 1.25f : 1.0f));
-
-                    TriggerShake(isCounter ? 0.18f : 0.1f, isCounter ? 4.5f : 2.5f);
-                    SpawnElementalBurst(proj.Position, proj.Element, isCounter ? 12 : 6);
-                    break;
-                }
-            }
-        }
     }
 
     private void TryStartBreakthrough()
@@ -1806,6 +1709,37 @@ public class Game1 : Game
                 Vector2 offset = new Vector2((float)(_random.NextDouble() * 2 - 1) * spread, (float)(_random.NextDouble() * 2 - 1) * spread);
                 _lightningStrikes.Add(new LightningStrike(_player.Position + offset, CultivationComponent.LIGHTNING_STRIKE_DELAY, e.Damage, _random.Next()));
             }
+        });
+
+        _eventManager.Subscribe<OnDamageDealtEvent>(e =>
+        {
+            bool heavy = e.IsCounter || e.IsCrit;
+            Color color = e.IsCounter ? Color.Red : e.IsCrit ? Color.Gold : Color.Orange;
+            string text = $"-{e.Amount:F0}" + (e.IsCrit ? " CHÍ MẠNG!" : "") + (e.IsCounter ? " KHẮC HỆ!" : "");
+            _floatingTexts.Add(new FloatingText(e.Position - new Vector2(0, 15), text, color, 1.3f, heavy ? 1.25f : 1.0f));
+            TriggerShake(heavy ? 0.18f : 0.1f, heavy ? 4.5f : 2.5f);
+            SpawnElementalBurst(e.ImpactPosition, e.Element, heavy ? 12 : 6);
+        });
+
+        _eventManager.Subscribe<OnStatusAppliedEvent>(e =>
+        {
+            string label = StatusEffect.GetDisplayName(e.Status);
+            if (StatusEffect.IsCrowdControl(e.Status)) label += $" ({e.Duration:F1}s)";
+            Color color = e.Status switch
+            {
+                StatusType.Poison => Color.MediumPurple,
+                StatusType.Burn => Color.OrangeRed,
+                StatusType.Root => Color.LimeGreen,
+                StatusType.Slow or StatusType.Freeze => Color.LightSkyBlue,
+                StatusType.Stun => Color.Yellow,
+                _ => Color.White
+            };
+            _floatingTexts.Add(new FloatingText(e.Position - new Vector2(0, 32), label, color, 1.3f));
+        });
+
+        _eventManager.Subscribe<OnElementalReactionEvent>(e =>
+        {
+            _floatingTexts.Add(new FloatingText(e.Position - new Vector2(0, 48), $"{e.ReactionName}!", Color.Gold, 1.5f, 1.1f));
         });
 
         _eventManager.Subscribe<OnPlayerDiedEvent>(e =>
