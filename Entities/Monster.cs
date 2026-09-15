@@ -32,6 +32,9 @@ namespace SandboxTuTien.Entities
         public bool IsAggroed { get; set; } = false;
 
         private Vector2 _roamDir = Vector2.Zero;
+
+        /// <summary>Phần lẻ số năm tích lũy giữa các frame (tránh bị cắt khi ép kiểu int).</summary>
+        private float _ageAccumulator = 0f;
         private readonly Random _random = new();
 
         /// <summary>Sự kiện kích hoạt khi Hồn Thú chết (để tạo Hồn Hoàn).</summary>
@@ -169,8 +172,10 @@ namespace SandboxTuTien.Entities
             int oldAge = Age;
             
             // Tốc độ tăng trưởng tuổi: khoảng 8 đến 15 năm mỗi giây thực tế
-            float ageIncrease = (float)(_random.NextDouble() * 7.0 + 8.0) * deltaTime;
-            Age = (int)(Age + ageIncrease);
+            _ageAccumulator += (float)(_random.NextDouble() * 7.0 + 8.0) * deltaTime;
+            int wholeYears = (int)_ageAccumulator;
+            _ageAccumulator -= wholeYears;
+            Age += wholeYears;
 
             // Cập nhật lại HP và kích thước nếu tuổi thay đổi
             if (Age != oldAge)

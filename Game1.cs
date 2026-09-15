@@ -772,7 +772,7 @@ public class Game1 : Game
             Console.WriteLine($"[Giao Diện] Bật/Tắt túi đồ: " + (_isInventoryOpen ? "MỞ" : "ĐÓNG"));
         }
 
-        if (IsKeyJustPressed(keys, Keys.E))
+        if (IsKeyJustPressed(keys, Keys.Tab))
         {
             CycleEquippedWeapon();
         }
@@ -973,8 +973,8 @@ public class Game1 : Game
             TriggerActiveSkill(1, mouseWorldPos);
         }
 
-        // --- Bấm phím [W] để kích hoạt Hồn kỹ 2 ---
-        if (IsKeyJustPressed(keys, Keys.W))
+        // --- Bấm phím [E] để kích hoạt Hồn kỹ 2 (W dành cho di chuyển) ---
+        if (IsKeyJustPressed(keys, Keys.E))
         {
             TriggerActiveSkill(2, mouseWorldPos);
         }
@@ -1439,7 +1439,7 @@ public class Game1 : Game
     private void TryAbsorbNearestSoulRing()
     {
         var cult = _player.Cultivation;
-        if (cult.CurrentState != CultivationState.BreakthroughReady && cult.CurrentState != CultivationState.Idle)
+        if (cult.CurrentState != CultivationState.BreakthroughReady)
         {
             _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Chua den binh canh!", Color.OrangeRed));
             return;
@@ -1627,7 +1627,7 @@ public class Game1 : Game
         Color qColor = cult.Skill1 != null ? Color.MediumSpringGreen : Color.DarkGray;
         _spriteBatch.DrawString(_font, qLabel, new Vector2(skillX + 10, skillY + 32), qColor, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
 
-        string wLabel = cult.Skill2 != null ? $"W: {cult.Skill2.Name}\n   ({cult.Skill2.SPCost} SP)" : "W: [Chua hoc]";
+        string wLabel = cult.Skill2 != null ? $"E: {cult.Skill2.Name}\n   ({cult.Skill2.SPCost} SP)" : "E: [Chua hoc]";
         Color wColor = cult.Skill2 != null ? Color.Gold : Color.DarkGray;
         _spriteBatch.DrawString(_font, wLabel, new Vector2(skillX + 10, skillY + 80), wColor, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
 
@@ -1660,7 +1660,7 @@ public class Game1 : Game
         DrawRect(20, guideY, 760, 50, new Color(55, 60, 85), true);
         DrawRect(21, guideY + 1, 758, 1, new Color(90, 100, 135, 150)); // top inner highlight
         _spriteBatch.DrawString(_font, "[WASD]: Move | [Left Click]: Normal Fire | [Right Click]: Spawn Monster | [T]: Place Turret", new Vector2(35, guideY + 5), Color.Silver, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
-        _spriteBatch.DrawString(_font, "[I]: Inventory | [E]: Switch Weapon | [1-5]: Quick Eat | [R]: Absorb Ring | [Q/W]: Cast Skills | [F]: Reload | [Y]: Cycle Turret | [F5]: Save DB | [F9]: Load DB", new Vector2(35, guideY + 26), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, "[I]: Inventory | [Tab]: Switch Weapon | [1-5]: Quick Eat | [R]: Absorb Ring | [Q/E]: Cast Skills | [F]: Reload | [Y]: Cycle Turret | [F5]: Save DB | [F9]: Load DB", new Vector2(35, guideY + 26), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
     }
 
     private void DrawInventoryUI()

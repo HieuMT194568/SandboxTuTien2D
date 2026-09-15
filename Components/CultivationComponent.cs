@@ -281,9 +281,10 @@ namespace SandboxTuTien.Components
 
             CurrentLevel = Math.Clamp(innateLevel, 0, 10);
             InnateMultiplier = Math.Clamp(innateMultiplier, 0f, 2.0f);
-            CurrentState = CultivationState.Idle;
-            CurrentRealm = GetRealmForLevel(CurrentLevel);
             SoulRingsCount = 0;
+            // Tiên thiên đúng mốc bình cảnh (VD: Mãn Hồn Lực cấp 10) thì phải hấp thu Hồn Hoàn trước
+            CurrentState = IsAtBottleneck() ? CultivationState.BreakthroughReady : CultivationState.Idle;
+            CurrentRealm = GetRealmForLevel(CurrentLevel);
             WillpowerBuff = 0f;
 
             // Khởi tạo HP theo level
@@ -403,8 +404,7 @@ namespace SandboxTuTien.Components
         /// <param name="soulBeastAge">Tuổi Hồn Thú (năm tu vi) — quyết định rủi ro.</param>
         public void StartAbsorbingSoulRing(int soulBeastAge, SandboxTuTien.Core.Combat.Element element)
         {
-            if (CurrentState != CultivationState.BreakthroughReady &&
-                CurrentState != CultivationState.Idle)
+            if (CurrentState != CultivationState.BreakthroughReady)
             {
                 Console.WriteLine($"[Hồn Hoàn] {OwnerName} chưa sẵn sàng hấp thu! " +
                                   $"Trạng thái hiện tại: {CurrentState}");
@@ -944,11 +944,20 @@ namespace SandboxTuTien.Components
                 Skill2 = null;
             }
 
-            // Đưa trạng thái về Idle nếu không bị chết
-            if (HP > 0 && CurrentState == CultivationState.Dead)
+            // Khôi phục trạng thái FSM từ dữ liệu đã lưu (bình cảnh nếu chưa đủ Hồn Hoàn ở mốc cấp)
+            if (HP > 0)
             {
-                CurrentState = CultivationState.Idle;
+                CurrentState = IsAtBottleneck() ? CultivationState.BreakthroughReady : CultivationState.Idle;
             }
+        }
+
+        /// <summary>
+        /// Đang ở mốc bình cảnh (cấp 10, 20, ...) mà chưa có đủ Hồn Hoàn cho mốc đó.
+        /// </summary>
+        private bool IsAtBottleneck()
+        {
+            return CurrentLevel > 0 && CurrentLevel < MAX_LEVEL &&
+                   CurrentLevel % 10 == 0 && SoulRingsCount < CurrentLevel / 10;
         }
     }
 }

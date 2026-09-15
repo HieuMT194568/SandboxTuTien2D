@@ -44,7 +44,7 @@ Hệ thống được thiết kế dựa trên 4 trụ cột kiến trúc cốt 
 Thư mục dự án được tổ chức phân lớp logic rõ ràng:
 
 ```text
-game/
+SandboxTuTien2D/
 ├── Core/                     # Các module cốt lõi của game engine
 │   ├── EventManager.cs       # Trung tâm điều phối EventBus (Subscribe/Publish)
 │   └── GameTimeManager.cs    # Quản lý thời gian trong thế giới game (1s thực = 24 phút game)
@@ -96,8 +96,8 @@ Cảnh giới tu luyện dựa trên cấp độ hồn lực từ 1 đến 99:
 ### 2. Giới Hạn Cơ Thể & Tỷ Lệ Đột Phá Hấp Thu Hồn Hoàn (Đấu La Đại Lục Rule)
 Khi chạm mốc cấp độ bình cảnh (`10, 20, 30...`), người chơi phải hấp thu Hồn Hoàn từ Hồn Thú để đột phá. Giới hạn năm tuổi của Hồn Hoàn an toàn được tính toán theo công thức Đấu La Đại Lục:
 *   Hồn Hoàn 1: **423 năm**
-*   Hồn Hoàn 2: **764 năm**
-*   Hồn Hoàn 3: **1,760 năm**
+*   Hồn Hoàn 2: **760 năm**
+*   Hồn Hoàn 3: **1,700 năm**
 *   Hồn Hoàn 4: **5,000 năm**
 *   Hồn Hoàn 5: **12,000 năm**
 *   Hồn Hoàn 6: **20,000 năm**
@@ -123,7 +123,7 @@ Khi bắt đầu hấp thu, trạng thái FSM chuyển sang `AbsorbingRing`. Qu�
 2. Hệ điều hành Windows (phù hợp với môi trường hiện tại của Workspace).
 
 ### 🚀 Cách chạy Game
-Mở PowerShell hoặc Command Prompt tại thư mục gốc của dự án (`d:\VSCODE\game`), chạy các lệnh sau:
+Mở PowerShell hoặc Command Prompt tại thư mục gốc của dự án (`SandboxTuTien2D`), chạy các lệnh sau:
 
 ```powershell
 # 1. Biên dịch dự án (Đảm bảo 0 lỗi, 0 cảnh báo)
@@ -136,10 +136,16 @@ dotnet run
 ### ⌨️ Phím Tắt Kiểm Thử (Keyboard Test Suite)
 Khi chạy game, màn hình Console sẽ ghi lại chi tiết các Log sự kiện thời gian thực. Bạn có thể sử dụng các phím tắt sau trên cửa sổ MonoGame để kiểm tra các luồng nghiệp vụ:
 
-*   **`[M]` (Minh Tưởng)**: Bật/Tắt chế độ Minh Tưởng. Khi bật, Hồn Sĩ sẽ tích lũy EXP tự động dựa trên tốc độ tu luyện.
-*   **`[Space]` (+500 EXP)**: Cộng trực tiếp 500 EXP giúp đẩy nhanh tốc độ lên cấp để kiểm tra cơ chế chạm bình cảnh (Bottleneck) tại cấp 10.
-*   **`[A]` (Hấp thu Hồn Hoàn 400 năm)**: Hấp thu Hồn Hoàn từ Hồn Thú 400 năm (nằm trong giới hạn an toàn 423 năm của Hồn Hoàn thứ nhất). Tỷ lệ thành công cực cao, an toàn.
-*   **`[D]` (Hấp thu Hồn Hoàn 9999 năm)**: Hấp thu Hồn Hoàn siêu việt cực hạn cơ thể. Năng lượng Hồn Hoàn sẽ bạo phát gây sát thương cực lớn liên tục trong 3 giây. Có khả năng cao dẫn đến tử vong (`PlayerDeathEvent`).
+*   **`[W][A][S][D]` / Mũi tên**: Di chuyển.
+*   **Chuột trái**: Phóng ám khí đang trang bị về phía con trỏ. **Chuột phải**: Sinh Hồn Thú ngẫu nhiên tại con trỏ.
+*   **`[M]` (Minh Tưởng)**: Bật/Tắt chế độ Minh Tưởng. Khi bật, nhân vật tích lũy EXP tự động dựa trên tốc độ tu luyện.
+*   **`[R]` (Hấp thu Hồn Hoàn)**: Hấp thu Hồn Hoàn gần nhất (trong 60px). Chỉ dùng được khi đang ở bình cảnh (cấp 10, 20, ...). Trong lúc hấp thu, bấm **`[Space]`** liên tục để tăng 2% tỷ lệ thành công mỗi lần.
+*   **`[Q]` / `[E]`**: Thi triển Hồn Kỹ 1 / 2 (mở khóa từ Hồn Hoàn thứ 1 / 2, tiêu hao SP).
+*   **`[Tab]`**: Đổi ám khí trang bị. **`[I]`**: Mở/Đóng túi đồ. **`[1]`–`[5]`**: Dùng nhanh vật phẩm.
+*   **`[C]`**: Mở Lò Rèn khi đứng gần đe (chọn công thức bằng `[F1]`/`[F2]` hoặc chuột).
+*   **`[T]`**: Đặt bệ phóng tự động (tốn 1 Thiết Mẫu, tối đa 3). **`[Y]`**: Đổi loại bệ phóng. **`[F]`**: Nạp đạn bệ phóng gần nhất.
+*   **`[F5]` / `[F9]`**: Lưu / Tải game từ MySQL.
+*   **Phím gian lận (test)**: `[Space]` +500 EXP (khi không hấp thu), `[U]` mở khóa Bát Chu Mâu, `[H]` sinh Hồn Hoàn 99.000 năm.
 *   **`[Esc]`**: Thoát game an toàn.
 
 ---
@@ -151,19 +157,19 @@ Dưới đây là bảng tổng hợp tiến độ hoàn thành các module ch�
 | Module | Tên Tệp Tin / Đường Dẫn | Trạng Thái | Mô Tả Chi Tiết |
 | :--- | :--- | :--- | :--- |
 | **Cấu Trúc** | `SandboxTuTien.csproj` | ✅ **Hoàn thành** | Chuyển đổi thành công sang cấu hình .NET 8.0, kích hoạt Nullable. Cài đặt NuGet `MySqlConnector`. |
-| **Hệ Sự Kiện** | [EventManager.cs](file:///d:/VSCODE/game/Core/EventManager.cs) | ✅ **Hoàn thành** | Triển khai EventBus Generic không đồng bộ và 7 sự kiện nghiệp vụ cốt lõi. |
-| **Hệ Thời Gian** | [GameTimeManager.cs](file:///d:/VSCODE/game/Core/GameTimeManager.cs) | ✅ **Hoàn thành** | Đồng bộ thời gian thực 1:1440 với định dạng hiển thị trực quan. |
-| **Data Models** | [Data/Models/](file:///d:/VSCODE/game/Data/Models/) | ✅ **Hoàn thành** | Định nghĩa cấu trúc POCO cho Ám Khí, Thực Phẩm, Thuộc Tính và Hiệu Ứng. |
-| **Data Loader** | [DataLoader.cs](file:///d:/VSCODE/game/Data/DataLoader.cs) | ✅ **Hoàn thành** | Trình đọc tệp cấu hình JSON linh hoạt sử dụng `System.Text.Json` làm dự phòng (Offline Fallback). |
-| **FSM Tu Luyện** | [CultivationComponent.cs](file:///d:/VSCODE/game/Components/CultivationComponent.cs) | ✅ **Hoàn thành** | Xây dựng máy trạng thái FSM tu luyện, bộ lọc giới hạn hồn hoàn Đấu La và cơ chế sát thương bạo phát. |
-| **Hệ Tu Luyện** | [CultivationSystem.cs](file:///d:/VSCODE/game/Systems/CultivationSystem.cs) | ✅ **Hoàn thành** | Tối ưu hóa cập nhật với giải thuật cắt lát thời gian (Time-Slicing). |
-| **Thực Thể** | [Player.cs](file:///d:/VSCODE/game/Entities/Player.cs) | ✅ **Hoàn thành** | Triển khai thực thể người chơi, nạp dữ liệu nền tảng và gán component. |
+| **Hệ Sự Kiện** | [EventManager.cs](Core/EventManager.cs) | ✅ **Hoàn thành** | Triển khai EventBus Generic không đồng bộ và 7 sự kiện nghiệp vụ cốt lõi. |
+| **Hệ Thời Gian** | [GameTimeManager.cs](Core/GameTimeManager.cs) | ✅ **Hoàn thành** | Đồng bộ thời gian thực 1:1440 với định dạng hiển thị trực quan. |
+| **Data Models** | [Data/Models/](Data/Models/) | ✅ **Hoàn thành** | Định nghĩa cấu trúc POCO cho Ám Khí, Thực Phẩm, Thuộc Tính và Hiệu Ứng. |
+| **Data Loader** | [DataLoader.cs](Data/DataLoader.cs) | ✅ **Hoàn thành** | Trình đọc tệp cấu hình JSON linh hoạt sử dụng `System.Text.Json` làm dự phòng (Offline Fallback). |
+| **FSM Tu Luyện** | [CultivationComponent.cs](Components/CultivationComponent.cs) | ✅ **Hoàn thành** | Xây dựng máy trạng thái FSM tu luyện, bộ lọc giới hạn hồn hoàn Đấu La và cơ chế sát thương bạo phát. |
+| **Hệ Tu Luyện** | [CultivationSystem.cs](Systems/CultivationSystem.cs) | ✅ **Hoàn thành** | Tối ưu hóa cập nhật với giải thuật cắt lát thời gian (Time-Slicing). |
+| **Thực Thể** | [Player.cs](Entities/Player.cs) | ✅ **Hoàn thành** | Triển khai thực thể người chơi, nạp dữ liệu nền tảng và gán component. |
 | **Hồ Sơ Cấu Hình** | `Content/Data/*.json` | ✅ **Hoàn thành** | Thiết lập cấu hình mẫu cho Ám khí (Vô Ảnh Châm, Khổng Tước Lực) và Thực phẩm (Xúc Xích Phục Hồi). |
-| **Giao Diện & HUD** | [Game1.cs](file:///d:/VSCODE/game/Game1.cs) | ✅ **Hoàn thành** | Kết nối toàn bộ hệ thống, tích hợp HUD vẽ thanh HP/EXP/SP cao cấp, tích hợp bộ gõ phím test. |
-| **Mô-đun Chiến đấu** | [ProjectilePool.cs](file:///d:/VSCODE/game/Core/Combat/ProjectilePool.cs) | ✅ **Hoàn thành** | Tích hợp ám khí Đường Môn cầm tay, hệ thống va chạm đạn bay hiệu năng cao (Object Pool), tính toán khắc hệ nguyên tố và cơ chế rung lắc camera/độ giật. |
-| **Hệ thống Túi đồ** | [InventoryComponent.cs](file:///d:/VSCODE/game/Components/InventoryComponent.cs) | ✅ **Hoàn thành** | Quản lý việc nhặt, lưu trữ, sử dụng thực phẩm hồi phục (buff hồi máu dần của Xúc Xích Oscar) và trang bị các loại ám khí. |
-| **Đồ họa 2D Pixel** | [Content/](file:///d:/VSCODE/game/Content/) | ✅ **Hoàn thành** | Thay thế toàn bộ hình ảnh phẳng bằng Sprite `.png` nghệ thuật tu tiên có chiều sâu. Áp dụng kỹ thuật render 3-pass chống nhòe văn bản và camera cuộn mượt mà. |
-| **CSDL MySQL & World Persistence** | [MySqlDbManager.cs](file:///d:/VSCODE/game/Data/MySqlDbManager.cs) | ✅ **Hoàn thành** | Tự khởi tạo DB và bảng dữ liệu, tự động di cư cấu hình từ JSON. Hỗ trợ lưu trữ hoàn toàn thế giới (quái vật, bệ phóng, hồn hoàn rơi, vật phẩm rơi) dưới định dạng JSON TEXT và tự động đăng ký lại sự kiện (Event Re-binding) khi nạp game. |
+| **Giao Diện & HUD** | [Game1.cs](Game1.cs) | ✅ **Hoàn thành** | Kết nối toàn bộ hệ thống, tích hợp HUD vẽ thanh HP/EXP/SP cao cấp, tích hợp bộ gõ phím test. |
+| **Mô-đun Chiến đấu** | [ProjectilePool.cs](Core/Combat/ProjectilePool.cs) | ✅ **Hoàn thành** | Tích hợp ám khí Đường Môn cầm tay, hệ thống va chạm đạn bay hiệu năng cao (Object Pool), tính toán khắc hệ nguyên tố và cơ chế rung lắc camera/độ giật. |
+| **Hệ thống Túi đồ** | [InventoryComponent.cs](Components/InventoryComponent.cs) | ✅ **Hoàn thành** | Quản lý việc nhặt, lưu trữ, sử dụng thực phẩm hồi phục (buff hồi máu dần của Xúc Xích Oscar) và trang bị các loại ám khí. |
+| **Đồ họa 2D Pixel** | [Content/](Content/) | ✅ **Hoàn thành** | Thay thế toàn bộ hình ảnh phẳng bằng Sprite `.png` nghệ thuật tu tiên có chiều sâu. Áp dụng kỹ thuật render 3-pass chống nhòe văn bản và camera cuộn mượt mà. |
+| **CSDL MySQL & World Persistence** | [MySqlDbManager.cs](Data/MySqlDbManager.cs) | ✅ **Hoàn thành** | Tự khởi tạo DB và bảng dữ liệu, tự động di cư cấu hình từ JSON. Hỗ trợ lưu trữ hoàn toàn thế giới (quái vật, bệ phóng, hồn hoàn rơi, vật phẩm rơi) dưới định dạng JSON TEXT và tự động đăng ký lại sự kiện (Event Re-binding) khi nạp game. |
 
 ---
 

@@ -63,7 +63,7 @@ Thiết lập 3 hệ chính: **Hỏa (Fire)** > **Mộc (Wood)** > **Băng (Ice)
 
 1.  **Hồn Kỹ Chủ Động (Active Skills)**:
     *   Phím `[Q]`: Kích hoạt Hồn Kỹ 1 (học từ Hồn Hoàn thứ nhất, tiêu hao SP).
-    *   Phím `[W]`: Kích hoạt Hồn Kỹ 2 (học từ Hồn Hoàn thứ hai, tiêu hao SP).
+    *   Phím `[E]`: Kích hoạt Hồn Kỹ 2 (học từ Hồn Hoàn thứ hai, tiêu hao SP).
     *   *Các kỹ năng đặc trưng*: Hỏa hệ (*Phượng Hoàng Hỏa Tuyến*, *Phượng Hoàng Huyền Oa*), Mộc hệ (*Lam Ngân Quấn Quanh*, *Lam Ngân Tù Lồng*), Băng hệ (*Băng Tằm Kết Giới*, *Huyền Băng Xung Kích*).
 2.  **Bệ Phóng Ám Khí Tự Động (Auto-Turret / Auto-Launcher)**:
     *   Đặt bằng phím `[T]` tại vị trí người chơi (tối đa 3 bệ phóng trên màn hình).
@@ -99,9 +99,9 @@ Thiết lập 3 hệ chính: **Hỏa (Fire)** > **Mộc (Wood)** > **Băng (Ice)
 *   `[T]`: Đặt bệ phóng tự động (Tối đa 3 bệ).
 *   `[Y]`: Thay đổi loại bệ phóng đặt tiếp theo (Vô Thanh Tụ Tiễn <=> Chư Cát Thần Nỗ <=> Hàm Sa Xạ Ảnh).
 *   `[F]`: Nạp lại đạn (Reload) cho bệ phóng gần nhất.
-*   `[Q] / [W]`: Thi triển Hồn Kỹ 1 / 2 hướng về con trỏ chuột.
+*   `[Q] / [E]`: Thi triển Hồn Kỹ 1 / 2 hướng về con trỏ chuột.
 *   `[I]`: Mở / đóng túi đồ (Inventory).
-*   `[E]`: Đổi vũ khí ám khí trang bị (Vô Thanh Tụ Tiễn <=> Chư Cát Thần Nỗ).
+*   `[Tab]`: Đổi vũ khí ám khí trang bị (Vô Thanh Tụ Tiễn <=> Chư Cát Thần Nỗ).
 *   `[R]`: Hấp thu Hồn Hoàn rơi dưới đất (khi đứng gần).
 *   `[1-5]`: Phím tắt ăn Xúc Xích hương tràng để hồi HP & SP trong túi đồ.
 *   `[U]`: Mở khóa nhanh Hồn Kốt Bát Chu Mâu (Cheat).
