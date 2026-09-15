@@ -225,7 +225,7 @@ Mở game là vào thẳng màn chọn lưu phái: **`[1]`–`[4]`** chọn lưu
 | Trận pháp | [FormationArray.cs](Entities/FormationArray.cs) | ✅ 3 loại trận |
 | Lò Luyện | [Game1.cs](Game1.cs) | ✅ Luyện đan & luyện khí data-driven |
 | CSDL MySQL | [MySqlDbManager.cs](Data/MySqlDbManager.cs) | ✅ Lưu/tải toàn bộ thế giới + lưu phái + độ thông thạo chiêu thức |
-| Đồ họa | [Content/Sprites/](Content/Sprites/) + [PixelArtGenerator.cs](Core/PixelArtGenerator.cs) | 🟡 Đan dược, Yêu Đan, Trận Kỳ, Đan Sư đang dùng hình vẽ thủ tục — chờ sprite .png |
+| Đồ họa | [Content/Sprites/](Content/Sprites/) + [PixelArtGenerator.cs](Core/PixelArtGenerator.cs) | ✅ Đủ 13 sprite .png, không còn phần nào phải fallback vẽ thủ tục lúc chạy |
 
 ---
 
@@ -239,5 +239,4 @@ Mở game là vào thẳng màn chọn lưu phái: **`[1]`–`[4]`** chọn lưu
 6. **Động Phủ & Linh Điền**: đặt Bồ Đoàn, Trận Nhãn; trồng Linh Thảo với `Time_grow = Base_Time / Linh_Tích_Đất`.
 7. **Nhân quả & Tông môn**: điểm danh vọng theo tông môn, hệ thống truy sát báo thù (Vendetta).
 8. **Thú triều**: giết nhiều Yêu Thú có thể đánh thức Yêu Vương tấn công Động Phủ.
-9. **Sprite .png** cho `pill.png`, `beast_core.png`, `material.png`, `formation_flag.png`, `alchemist.png`.
-10. **Cân bằng số liệu**: các con số sát thương/hồi chiêu/khiên hiện chỉ ước lượng hợp lý, chưa qua playtest thực tế nhiều giờ.
+9. **Cân bằng số liệu**: các con số sát thương/hồi chiêu/khiên hiện chỉ ước lượng hợp lý, chưa qua playtest thực tế nhiều giờ.
