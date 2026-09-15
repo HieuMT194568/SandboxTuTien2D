@@ -14,6 +14,9 @@ namespace SandboxTuTien.Core
         public Element Element { get; set; }
         public bool IsCounter { get; set; }
         public bool IsCrit { get; set; }
+
+        /// <summary>Nguồn gây sát thương (Player hay Formation) — dùng để nhận diện đòn của người chơi cho nội tại như Kiếm Ý.</summary>
+        public ProjectileOwner Owner { get; set; }
     }
 
     /// <summary>Một hiệu ứng trạng thái vừa được áp lên mục tiêu.</summary>
@@ -59,14 +62,6 @@ namespace SandboxTuTien.Core
     {
         public string PlayerName { get; set; } = string.Empty;
         public string CauseOfDeath { get; set; } = string.Empty;
-    }
-
-    /// <summary>Sự kiện lĩnh ngộ Pháp Thuật mới sau khi đột phá.</summary>
-    public class OnTechniqueLearnedEvent
-    {
-        public string PlayerName { get; set; } = string.Empty;
-        public string TechniqueName { get; set; } = string.Empty;
-        public int Tier { get; set; }
     }
 
     /// <summary>

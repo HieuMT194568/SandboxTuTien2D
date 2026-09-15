@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using MySqlConnector;
+using SandboxTuTien.Components;
 using SandboxTuTien.Data.Models;
 using SandboxTuTien.Entities;
 
@@ -82,11 +83,13 @@ namespace SandboxTuTien.Data
                             ) ENGINE=InnoDB;";
                         cmd.ExecuteNonQuery();
 
-                        // Bảng lưu game (chỉ số người chơi, túi đồ và toàn bộ thế giới)
+                        // Bảng lưu game (chỉ số người chơi, lưu phái, chiêu thức, túi đồ và toàn bộ thế giới)
                         cmd.CommandText = @"
                             CREATE TABLE IF NOT EXISTS player_saves (
                                 save_slot VARCHAR(50) PRIMARY KEY,
                                 player_name VARCHAR(100) NOT NULL,
+                                class_id VARCHAR(50),
+                                class_element VARCHAR(20),
                                 level INT NOT NULL,
                                 current_exp FLOAT NOT NULL,
                                 hp FLOAT NOT NULL,
@@ -96,8 +99,7 @@ namespace SandboxTuTien.Data
                                 equipped_weapon_id VARCHAR(50),
                                 inventory_json TEXT,
                                 breakthrough_count INT DEFAULT 0,
-                                skill1_id VARCHAR(50),
-                                skill2_id VARCHAR(50),
+                                skill_mastery_json TEXT,
                                 has_van_doc_the TINYINT DEFAULT 0,
                                 heart_demon FLOAT DEFAULT 0,
                                 realm VARCHAR(50),
@@ -107,6 +109,33 @@ namespace SandboxTuTien.Data
                                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                             ) ENGINE=InnoDB;";
                         cmd.ExecuteNonQuery();
+
+                        // Di cư an toàn cho bảng player_saves đã tồn tại từ phiên bản trước phần Lưu Phái
+                        // (không xóa cột skill1_id/skill2_id cũ nếu có — chỉ ngừng đọc/ghi chúng).
+                        // Dùng INFORMATION_SCHEMA thay vì "ADD COLUMN IF NOT EXISTS" vì cú pháp đó không
+                        // được mọi phiên bản MySQL/MariaDB hỗ trợ.
+                        foreach (var (column, definition) in new[]
+                        {
+                            ("class_id", "VARCHAR(50)"),
+                            ("class_element", "VARCHAR(20)"),
+                            ("skill_mastery_json", "TEXT")
+                        })
+                        {
+                            cmd.CommandText = @"
+                                SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                                WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'player_saves' AND COLUMN_NAME = @col;";
+                            cmd.Parameters.Clear();
+                            cmd.Parameters.AddWithValue("@db", DATABASE_NAME);
+                            cmd.Parameters.AddWithValue("@col", column);
+                            long exists = Convert.ToInt64(cmd.ExecuteScalar());
+
+                            if (exists == 0)
+                            {
+                                cmd.Parameters.Clear();
+                                cmd.CommandText = $"ALTER TABLE player_saves ADD COLUMN {column} {definition};";
+                                cmd.ExecuteNonQuery();
+                            }
+                        }
                     }
                 }
 
@@ -335,6 +364,7 @@ namespace SandboxTuTien.Data
         /// </summary>
         public bool SavePlayerState(
             Player player,
+            SkillLoadoutComponent loadout,
             List<Monster> monsters,
             List<DroppedItem> droppedItems,
             List<FormationArray> formations,
@@ -410,10 +440,12 @@ namespace SandboxTuTien.Data
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = @"
-                            INSERT INTO player_saves (save_slot, player_name, level, current_exp, hp, max_hp, spirit_power, max_spirit_power, equipped_weapon_id, inventory_json, breakthrough_count, skill1_id, skill2_id, has_van_doc_the, heart_demon, realm, monsters_json, dropped_items_json, formations_json)
-                            VALUES (@slot, @name, @level, @exp, @hp, @maxHp, @sp, @maxSp, @weapon, @inventory, @breakthroughs, @skill1, @skill2, @vanDocThe, @heartDemon, @realm, @monsters, @droppedItems, @formations)
+                            INSERT INTO player_saves (save_slot, player_name, class_id, class_element, level, current_exp, hp, max_hp, spirit_power, max_spirit_power, equipped_weapon_id, inventory_json, breakthrough_count, skill_mastery_json, has_van_doc_the, heart_demon, realm, monsters_json, dropped_items_json, formations_json)
+                            VALUES (@slot, @name, @classId, @classElement, @level, @exp, @hp, @maxHp, @sp, @maxSp, @weapon, @inventory, @breakthroughs, @mastery, @vanDocThe, @heartDemon, @realm, @monsters, @droppedItems, @formations)
                             ON DUPLICATE KEY UPDATE
                                 player_name = VALUES(player_name),
+                                class_id = VALUES(class_id),
+                                class_element = VALUES(class_element),
                                 level = VALUES(level),
                                 current_exp = VALUES(current_exp),
                                 hp = VALUES(hp),
@@ -423,8 +455,7 @@ namespace SandboxTuTien.Data
                                 equipped_weapon_id = VALUES(equipped_weapon_id),
                                 inventory_json = VALUES(inventory_json),
                                 breakthrough_count = VALUES(breakthrough_count),
-                                skill1_id = VALUES(skill1_id),
-                                skill2_id = VALUES(skill2_id),
+                                skill_mastery_json = VALUES(skill_mastery_json),
                                 has_van_doc_the = VALUES(has_van_doc_the),
                                 heart_demon = VALUES(heart_demon),
                                 realm = VALUES(realm),
@@ -434,6 +465,8 @@ namespace SandboxTuTien.Data
 
                         cmd.Parameters.AddWithValue("@slot", saveSlot);
                         cmd.Parameters.AddWithValue("@name", player.Name);
+                        cmd.Parameters.AddWithValue("@classId", loadout.PlayerClass.Id);
+                        cmd.Parameters.AddWithValue("@classElement", loadout.ChosenElement.ToString());
                         cmd.Parameters.AddWithValue("@level", cult.CurrentLevel);
                         cmd.Parameters.AddWithValue("@exp", cult.CurrentExp);
                         cmd.Parameters.AddWithValue("@hp", cult.HP);
@@ -443,8 +476,7 @@ namespace SandboxTuTien.Data
                         cmd.Parameters.AddWithValue("@weapon", player.Inventory.EquippedWeapon?.ItemId ?? string.Empty);
                         cmd.Parameters.AddWithValue("@inventory", inventoryJson);
                         cmd.Parameters.AddWithValue("@breakthroughs", cult.BreakthroughCount);
-                        cmd.Parameters.AddWithValue("@skill1", cult.Skill1?.Id ?? string.Empty);
-                        cmd.Parameters.AddWithValue("@skill2", cult.Skill2?.Id ?? string.Empty);
+                        cmd.Parameters.AddWithValue("@mastery", loadout.SerializeMastery());
                         cmd.Parameters.AddWithValue("@vanDocThe", cult.HasVanDocThe ? 1 : 0);
                         cmd.Parameters.AddWithValue("@heartDemon", cult.HeartDemon);
                         cmd.Parameters.AddWithValue("@realm", cult.CurrentRealm.ToString());
@@ -470,6 +502,7 @@ namespace SandboxTuTien.Data
         /// </summary>
         public bool LoadPlayerState(
             Player player,
+            SkillLoadoutComponent loadout,
             DataLoader loader,
             out string monstersJson,
             out string droppedItemsJson,
@@ -490,7 +523,7 @@ namespace SandboxTuTien.Data
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = @"
-                            SELECT player_name, level, current_exp, hp, max_hp, spirit_power, max_spirit_power, equipped_weapon_id, inventory_json, breakthrough_count, skill1_id, skill2_id, has_van_doc_the, heart_demon, realm, monsters_json, dropped_items_json, formations_json
+                            SELECT player_name, class_id, class_element, level, current_exp, hp, max_hp, spirit_power, max_spirit_power, equipped_weapon_id, inventory_json, breakthrough_count, skill_mastery_json, has_van_doc_the, heart_demon, realm, monsters_json, dropped_items_json, formations_json
                             FROM player_saves
                             WHERE save_slot = @slot;";
                         cmd.Parameters.AddWithValue("@slot", saveSlot);
@@ -500,28 +533,39 @@ namespace SandboxTuTien.Data
                             if (reader.Read())
                             {
                                 string name = reader.GetString(0);
-                                int level = reader.GetInt32(1);
-                                float exp = reader.GetFloat(2);
-                                float hp = reader.GetFloat(3);
-                                float maxHp = reader.GetFloat(4);
-                                float sp = reader.GetFloat(5);
-                                float maxSp = reader.GetFloat(6);
-                                string weaponId = reader.IsDBNull(7) ? string.Empty : reader.GetString(7);
-                                string inventoryJson = reader.IsDBNull(8) ? string.Empty : reader.GetString(8);
-                                int breakthroughCount = reader.GetInt32(9);
-                                string skill1Id = reader.IsDBNull(10) ? string.Empty : reader.GetString(10);
-                                string skill2Id = reader.IsDBNull(11) ? string.Empty : reader.GetString(11);
-                                bool hasVanDocThe = reader.GetByte(12) == 1;
-                                float heartDemon = reader.IsDBNull(13) ? 0f : reader.GetFloat(13);
-                                string realmStr = reader.IsDBNull(14) ? string.Empty : reader.GetString(14);
+                                string savedClassId = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+                                int level = reader.GetInt32(3);
+                                float exp = reader.GetFloat(4);
+                                float hp = reader.GetFloat(5);
+                                float maxHp = reader.GetFloat(6);
+                                float sp = reader.GetFloat(7);
+                                float maxSp = reader.GetFloat(8);
+                                string weaponId = reader.IsDBNull(9) ? string.Empty : reader.GetString(9);
+                                string inventoryJson = reader.IsDBNull(10) ? string.Empty : reader.GetString(10);
+                                int breakthroughCount = reader.GetInt32(11);
+                                string masteryJson = reader.IsDBNull(12) ? string.Empty : reader.GetString(12);
+                                bool hasVanDocThe = reader.GetByte(13) == 1;
+                                float heartDemon = reader.IsDBNull(14) ? 0f : reader.GetFloat(14);
+                                string realmStr = reader.IsDBNull(15) ? string.Empty : reader.GetString(15);
 
-                                monstersJson = reader.IsDBNull(15) ? string.Empty : reader.GetString(15);
-                                droppedItemsJson = reader.IsDBNull(16) ? string.Empty : reader.GetString(16);
-                                formationsJson = reader.IsDBNull(17) ? string.Empty : reader.GetString(17);
+                                monstersJson = reader.IsDBNull(16) ? string.Empty : reader.GetString(16);
+                                droppedItemsJson = reader.IsDBNull(17) ? string.Empty : reader.GetString(17);
+                                formationsJson = reader.IsDBNull(18) ? string.Empty : reader.GetString(18);
+
+                                // Nếu bản lưu thuộc lưu phái khác lưu phái đang chơi (F9 chỉ nạp lại trong cùng
+                                // phiên chơi, chưa hỗ trợ "tiếp tục" từ màn hình chọn lưu phái), chỉ cảnh báo.
+                                if (!string.IsNullOrEmpty(savedClassId) && savedClassId != loadout.PlayerClass.Id)
+                                {
+                                    Console.WriteLine($"[MySQL] CẢNH BÁO: Bản lưu thuộc lưu phái '{savedClassId}', " +
+                                                      $"khác lưu phái đang chơi '{loadout.PlayerClass.Id}'. Vẫn nạp chỉ số/thông thạo.");
+                                }
 
                                 // Phục hồi tu vi
                                 player.Cultivation.LoadState(level, exp, hp, maxHp, sp, maxSp, breakthroughCount,
-                                                             hasVanDocThe, heartDemon, realmStr, skill1Id, skill2Id);
+                                                             hasVanDocThe, heartDemon, realmStr);
+
+                                // Phục hồi độ thông thạo chiêu thức
+                                loadout.LoadMastery(masteryJson);
 
                                 // Phục hồi túi đồ
                                 if (!string.IsNullOrEmpty(inventoryJson))

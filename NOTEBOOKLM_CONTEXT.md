@@ -59,14 +59,13 @@ $$\text{Age} \mathrel{+}= \text{Random}(8 \to 15) \times \Delta t \quad(\text{c�
 
 ---
 
-## ⚔️ 4. Pháp Thuật, Pháp Khí & Trận Pháp
+## ⚔️ 4. Lưu Phái, Chiêu Thức, Pháp Khí & Trận Pháp
 
-1.  **Pháp Thuật** (`techniques.json`), kiểu phóng `fan` / `barrage` / `nova`:
-    *   Hỏa: *Liệt Hỏa Phi Tiễn* (chuỗi 8 tia), *Tam Muội Chân Hỏa* (quạt 5 tia).
-    *   Mộc: *Thanh Mộc Triền Ti* (quạt 3 tia), *Vạn Mộc Khốn Trận* (quạt 5 tia).
-    *   Băng: *Hàn Băng Hộ Thể* (tỏa tròn 12 tia), *Huyền Băng Liệt Phong* (quạt 10 tia).
-    *   Vô thuộc tính: *Kim Quang Chỉ*, *Thiên Cương Quyền*.
-2.  **Pháp Khí** (`phap_khi.json`): *Thanh Phong Phi Kiếm* (Mộc, 3 kiếm, không kinh động Yêu Thú), *Xích Diễm Kiếm Hạp* (Hỏa, 16 kiếm).
+0.  **Lưu Phái** (`classes.json`, chọn 1 lần khi bắt đầu game): Kiếm Tu, Pháp Tu (chia theo hệ Linh Căn Hỏa/Mộc/Băng), Thể Tu, Phù Trận Sư. Mỗi lưu phái có hệ số HP/Linh Lực/Tốc độ, 2 nội tại, và bộ 6 ô chiêu (đánh thường/chiêu 1-3/lướt/tuyệt kỹ). `SkillLoadoutComponent` tra ô chiêu, kiểm mở khóa theo cảnh giới, và theo dõi độ thông thạo (4 bậc: Nhập Môn/Tiểu Thành/Đại Thành/Viên Mãn, lên bậc bằng số lần dùng).
+1.  **Chiêu Thức** (`skills.json`, 32 chiêu), 7 kiểu ra đòn — chỉ `projectile` (`fan`/`barrage`/`nova`), `dash`, `zone` đã thi triển qua `SkillSystem`/`ZoneSystem`; `melee_arc`/`ground_aoe`/`self_buff`/`channel` mới có dữ liệu, thi triển ở giai đoạn sau:
+    *   Kiếm Tu: *Ngự Kiếm Thuật* (đánh thường, projectile xuyên), *Kiếm Khí Trảm*, *Phân Quang Hóa Ảnh*, *Kiếm Tâm Phá Giáp*, *Kiếm Độn* (dash), *Vạn Kiếm Quy Tông* (zone, tuyệt kỹ).
+    *   Pháp Tu Hỏa: *Liệt Hỏa Phi Tiễn* (chuỗi 8 tia), *Tam Muội Chân Hỏa*. Mộc: *Triền Đằng Thuật*, *Vạn Mộc Khốn Trận*. Băng: *Hàn Băng Tiễn*, *Huyền Băng Thiên Hàng*.
+2.  **Pháp Khí** (`phap_khi.json`): *Thanh Phong Phi Kiếm* (Mộc, 3 kiếm, không kinh động Yêu Thú), *Xích Diễm Kiếm Hạp* (Hỏa, 16 kiếm) — nguyên liệu chế tạo/trang bị cảnh, không còn quyết định đòn đánh thường (nay lấy từ chiêu "basic" của lưu phái).
 3.  **Trận Pháp** (phím `[T]`, tốn Linh Thạch, tối đa 3):
     *   **Kim Châm Trận**: 0.5s, tầm 220px, 10 sát thương, không kinh động Yêu Thú.
     *   **Phá Quân Kiếm Trận**: 3.0s, tầm 260px, 80 sát thương, tốn 2 phần linh lực.
@@ -97,12 +96,13 @@ $$\text{Age} \mathrel{+}= \text{Random}(8 \to 15) \times \Delta t \quad(\text{c�
 
 ## ⌨️ 7. Phím Điều Khiển
 
+*   **Màn chọn lưu phái**: `[1-4]` chọn lưu phái, `[Enter]` xác nhận; Pháp Tu thêm bước `[1-3]` chọn hệ Linh Căn (Hỏa/Mộc/Băng), `[Backspace]` quay lại.
 *   `[W, A, S, D]` / mũi tên: Di chuyển (được di chuyển khi độ Thiên Kiếp).
-*   `[Chuột Trái]`: Phóng pháp khí. `[Chuột Phải]`: Gọi Yêu Thú.
+*   `[Chuột Trái]`: Đánh thường (chiêu "basic" của lưu phái). `[Chuột Giữa]`: Gọi Yêu Thú (test).
 *   `[M]`: Đả Tọa. `[R]`: Đột phá. `[Space]`: Ổn định đạo tâm khi đột phá.
-*   `[Q] / [E]`: Pháp Thuật 1 / 2.
-*   `[I]`: Túi trữ vật. `[Tab]`: Đổi pháp khí. `[1-5]`: Dùng nhanh vật phẩm.
-*   `[C]`: Lò Luyện (`[F1-F4]` chọn công thức).
+*   `[Q] / [E] / [C]`: Chiêu 1 / 2 / 3. `[Shift]`: Lướt. `[X]`: Tuyệt kỹ.
+*   `[I]`: Túi trữ vật. `[Tab]`: Đổi pháp khí trang bị (cosmetic). `[1-5]`: Dùng nhanh vật phẩm.
+*   `[G]`: Lò Luyện (`[F1-F4]` chọn công thức).
 *   `[T]`: Bày trận. `[Y]`: Đổi loại trận. `[F]`: Nạp Linh Thạch.
 *   `[F5]` / `[F9]`: Lưu / Tải MySQL.
 *   Cheat: `[Space]` +500 tu vi, `[U]` Vạn Độc Thể, `[H]` +3 Phá Cảnh Đan.
@@ -116,6 +116,6 @@ $$\text{Age} \mathrel{+}= \text{Random}(8 \to 15) \times \Delta t \quad(\text{c�
 2.  **Bảng**:
     *   `consumables`: đan dược / vật liệu (hiệu ứng, công thức dạng JSON).
     *   `magic_weapons`: pháp khí (hệ, chỉ số, hiệu ứng, công thức dạng JSON).
-    *   `player_saves`: tầng, tu vi, HP/Linh Lực, túi đồ, số lần đột phá, pháp thuật đã lĩnh ngộ (theo `id`), Vạn Độc Thể, Tâm Ma, cảnh giới, và toàn bộ thế giới (`monsters_json`, `dropped_items_json`, `formations_json`).
+    *   `player_saves`: lưu phái (`class_id`, `class_element`), tầng, tu vi, HP/Linh Lực, túi đồ, số lần đột phá, độ thông thạo từng chiêu (`skill_mastery_json`, theo `id`), Vạn Độc Thể, Tâm Ma, cảnh giới, và toàn bộ thế giới (`monsters_json`, `dropped_items_json`, `formations_json`).
 3.  **Đồng bộ JSON → MySQL** mỗi lần khởi động; **offline fallback** khi không có MySQL.
 4.  **Tự động lưu** khi tăng tầng hoặc đột phá thành công; `[F9]` dọn thế giới hiện tại, dựng lại từ save và gắn lại sự kiện `OnKilled` cho Yêu Thú.

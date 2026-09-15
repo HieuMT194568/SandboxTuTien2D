@@ -145,13 +145,27 @@ Số đạo mỗi đợt lôi kiếp = 1 + (tầng/10 − 2) / 2
 ```
 Loại hiệu ứng hỗ trợ: `HEAL_HP`, `HEAL_HP_OVER_TIME`, `RECOVER_SPIRIT_POWER`, `BREAKTHROUGH_BUFF`, `GAIN_CULTIVATION`, `APPLY_DEBUFF`. Vật phẩm không có hiệu ứng là **nguyên liệu** (không dùng trực tiếp).
 
-### C. Pháp Thuật — `Content/Data/techniques.json`
+### C. Lưu Phái — `Content/Data/classes.json`
+```json
+{
+  "id": "kiem_tu",
+  "name": "Kiếm Tu",
+  "stat_multipliers": { "hp": 1.0, "spirit_power": 0.9, "speed": 1.1 },
+  "passives": [{ "id": "kiem_y", "name": "Kiếm Ý", "description": "..." }],
+  "skills": { "basic": "kiemtu_ngu_kiem_thuat", "skill_1": "...", "dash": "...", "ultimate": "..." }
+}
+```
+Chọn một lần khi bắt đầu game mới. `stat_multipliers` nhân vào HP/Linh Lực/Tốc độ gốc (`CultivationComponent`). `skills` tham chiếu 6 ô id sang `skills.json`; Pháp Tu dùng thêm `skills.by_element` (khóa `Fire`/`Wood`/`Ice`) thay vì các trường cố định vì bộ chiêu đổi theo Linh Căn.
+
+### D. Chiêu Thức — `Content/Data/skills.json`
 ```json
 {
   "id": "hoa_1",
-  "name": "Liệt Hỏa Phi Tiễn",
+  "class_id": "phap_tu",
+  "slot": "skill_1",
+  "type": "projectile",
   "element": "Fire",
-  "tier": 1,
+  "unlock_realm": "LuyenKhi",
   "sp_cost": 25,
   "damage": 100,
   "pattern": "barrage",
@@ -159,12 +173,14 @@ Loại hiệu ứng hỗ trợ: `HEAL_HP`, `HEAL_HP_OVER_TIME`, `RECOVER_SPIRIT_
   "spread": 0.08,
   "spacing": 8,
   "range": 400,
-  "speed": 450
+  "speed": 450,
+  "cooldown": 4
 }
 ```
-*   `tier`: 1 = lĩnh ngộ sau lần đột phá đầu (phím Q), 2 = sau lần thứ hai (phím E).
-*   `pattern`: `fan` (quạt đều theo `spread` radian), `barrage` (chuỗi liên tiếp, lệch ngẫu nhiên `spread`, cách nhau `spacing` px), `nova` (tỏa tròn 360°).
-*   Mỗi tier cần có một pháp thuật `"element": "None"` làm dự phòng.
+*   `slot`: `basic` / `skill_1` / `skill_2` / `skill_3` / `dash` / `ultimate` — 6 ô cố định của mọi lưu phái.
+*   `unlock_realm`: mở khóa khi `CultivationComponent.CurrentRealm` đạt cảnh giới này (thay cho hệ tier-theo-đột-phá cũ).
+*   `type`: `projectile` (đã thi triển đầy đủ qua `SkillSystem`, dùng `pattern` `fan`/`barrage`/`nova`), `dash` (di chuyển tức thời + sát thương/đẩy lùi tại điểm đến, đã thi triển), `zone` (vùng sát thương/hồi máu theo thời gian qua `ZoneSystem`, đã thi triển). `melee_arc`, `ground_aoe`, `self_buff`, `channel` đã có đủ trường dữ liệu nhưng **chưa được thi triển** — `SkillSystem.TryCast` trả về `NotSupported`.
+*   `GameDataValidator` kiểm tra mọi id lưu phái tham chiếu tồn tại, đúng `class_id`, đúng `slot` khai báo.
 
 ---
 

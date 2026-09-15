@@ -16,6 +16,20 @@ using SandboxTuTien.Systems;
 
 namespace SandboxTuTien;
 
+/// <summary>Màn hình hiện tại: chọn lưu phái trước khi vào game, hoặc đang chơi.</summary>
+public enum GameScreen
+{
+    ClassSelect,
+    Playing
+}
+
+/// <summary>Bước trong màn hình chọn lưu phái: chọn lưu phái, rồi chọn hệ Linh Căn nếu cần (Pháp Tu).</summary>
+public enum ClassSelectStep
+{
+    PickClass,
+    PickElement
+}
+
 /// <summary>
 /// Đối tượng chữ nổi phục vụ hiển thị sát thương hoặc thông báo.
 /// </summary>
@@ -79,6 +93,10 @@ public class Game1 : Game
     private const string PLAYER_NAME = "Lâm Phong";
     private const int MAX_FORMATIONS = 3;
     private const string SPIRIT_STONE_ID = "linh_thach";
+    private const float BASE_MOVE_SPEED = 180f;
+    private const float DASH_IMPACT_RADIUS = 60f;
+
+    private static readonly Element[] PhapTuElements = { Element.Fire, Element.Wood, Element.Ice };
 
     private static readonly Vector2 AlchemistPosition = new Vector2(250, 380);
     private static readonly Vector2 ForgePosition = new Vector2(550, 380);
@@ -127,6 +145,7 @@ public class Game1 : Game
     private CultivationSystem _cultivationSystem = null!;
     private CombatSystem _combatSystem = null!;
     private SkillSystem _skillSystem = null!;
+    private ZoneSystem _zoneSystem = null!;
 
     /// <summary>Nội tại Vạn Độc Thể: 25% tẩm độc 2% HP/giây trong 5 giây.</summary>
     private static readonly IReadOnlyList<OnHitEffect> VanDocTheOnHit = new[]
@@ -138,6 +157,7 @@ public class Game1 : Game
     // ĐỐI TƯỢNG VÀ COMBAT
     // ========================================================================
     private Player _player = null!;
+    private SkillLoadoutComponent _skillLoadout = null!;
     private ProjectilePool _projectilePool = null!;
     private readonly List<Monster> _monsters = new();
     private readonly List<FloatingText> _floatingTexts = new();
@@ -158,7 +178,8 @@ public class Game1 : Game
 
     private List<MagicWeaponData> _magicWeapons = null!;
     private List<ConsumableData> _consumables = null!;
-    private List<TechniqueData> _techniques = null!;
+    private List<ClassData> _classes = null!;
+    private List<SkillData> _skills = null!;
     private List<CraftingRecipe> _recipes = new();
 
     // ========================================================================
@@ -170,6 +191,26 @@ public class Game1 : Game
     private KeyboardState _previousKeyState;
     private MouseState _previousMouseState;
     private readonly Random _random = new();
+
+    // ========================================================================
+    // MÀN HÌNH CHỌN LƯU PHÁI
+    // ========================================================================
+    private GameScreen _screen = GameScreen.ClassSelect;
+    private ClassSelectStep _classSelectStep = ClassSelectStep.PickClass;
+    private int _selectedClassIndex = 0;
+    private int _selectedElementIndex = 0;
+
+    // ========================================================================
+    // NỘI TẠI KIẾM TU — Kiếm Ý (cộng dồn sát thương khi đánh trúng liên tục)
+    // ========================================================================
+    private int _kiemYStacks = 0;
+    private float _kiemYTimer = 0f;
+    private const float KIEM_Y_DECAY_TIME = 3f;
+    private const float KIEM_Y_PER_STACK = 0.03f;
+    private const int KIEM_Y_MAX_STACKS = 10;
+
+    /// <summary>Bộ chiêu unlocked ở lần kiểm tra gần nhất, dùng để phát hiện chiêu mới lĩnh ngộ khi lên cảnh giới.</summary>
+    private readonly HashSet<string> _previouslyUnlockedSkillIds = new();
 
     public Game1()
     {
@@ -186,7 +227,7 @@ public class Game1 : Game
 
         Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
         Console.WriteLine("║            SANDBOX TU TIÊN 2D PIXEL                      ║");
-        Console.WriteLine("║     Tu Luyện, Thiên Kiếp, Luyện Đan & Trận Pháp v3.0      ║");
+        Console.WriteLine("║   Lưu Phái, Tu Luyện, Thiên Kiếp, Luyện Đan & Trận Pháp   ║");
         Console.WriteLine("╚══════════════════════════════════════════════════════════╝");
         Console.WriteLine();
 
@@ -207,26 +248,59 @@ public class Game1 : Game
 
         LoadGameData();
 
-        // 4. Khởi tạo Hệ thống Tu luyện
+        // 4. Khởi tạo các hệ thống lõi không phụ thuộc lưu phái (Player được tạo sau khi chọn lưu phái)
         _cultivationSystem = new CultivationSystem();
-
-        // 5. Khởi tạo Projectile Pool
         _projectilePool = new ProjectilePool();
         _combatSystem = new CombatSystem(_monsters, _projectilePool, _eventManager);
         _skillSystem = new SkillSystem(_projectilePool);
+        _zoneSystem = new ZoneSystem(_combatSystem);
 
-        // 6. Tạo Player — Thiên Linh Căn hệ Hỏa, bắt đầu từ Luyện Khí tầng 1
+        _previousKeyState = Keyboard.GetState();
+        _previousMouseState = Mouse.GetState();
+
+        // Bắt đầu ở màn hình chọn lưu phái; StartNewGame() sẽ tạo Player và thế giới khi đã chọn xong
+        _screen = GameScreen.ClassSelect;
+
+        base.Initialize();
+    }
+
+    /// <summary>
+    /// Tạo Player theo lưu phái + hệ Linh Căn đã chọn, cấp phát túi đồ, sinh thế giới ban đầu,
+    /// rồi chuyển sang màn hình chơi. Gọi một lần duy nhất từ màn hình chọn lưu phái.
+    /// </summary>
+    private void StartNewGame(ClassData chosenClass, Element chosenElement)
+    {
+        bool isPhapTu = chosenClass.HasElementalSkills;
+        float spiritRootMultiplier = isPhapTu ? 2.0f : 1.2f; // Pháp Tu: Thiên Linh Căn; còn lại: Chân Linh Căn
+        Element spiritRootElement = isPhapTu ? chosenElement : Element.None;
+
         _player = new Player(
             name: PLAYER_NAME,
             eventManager: _eventManager,
-            techniques: _techniques,
             innateLevel: 1,
-            spiritRootMultiplier: 2.0f,
-            spiritRootElement: Element.Fire
+            spiritRootMultiplier: spiritRootMultiplier,
+            spiritRootElement: spiritRootElement,
+            hpMultiplier: chosenClass.StatMultipliers.HP,
+            spiritPowerMultiplier: chosenClass.StatMultipliers.SpiritPower,
+            moveSpeedMultiplier: chosenClass.StatMultipliers.Speed
         );
         _cultivationSystem.RegisterComponent(_player.Cultivation);
 
-        // 7. Cấp phát túi đồ mặc định
+        _skillLoadout = new SkillLoadoutComponent(chosenClass, chosenElement, _skills);
+        _previouslyUnlockedSkillIds.Clear();
+        foreach (var skill in _skillLoadout.GetUnlockedSkills(_player.Cultivation.CurrentRealm))
+        {
+            _previouslyUnlockedSkillIds.Add(skill.Id);
+        }
+
+        // Nội tại: Ngũ Hành Tương Khắc (Pháp Tu, khắc hệ +75% thay vì +50%), Kiếm Tâm Thông Minh (Kiếm Tu, +15% chí mạng)
+        _combatSystem.PlayerCounterMultiplier = chosenClass.Passives.Any(p => p.Id == "ngu_hanh_tuong_khac")
+            ? 1.75f : DamageCalculator.DEFAULT_COUNTER_MULTIPLIER;
+        _combatSystem.PlayerCritChance = chosenClass.Passives.Any(p => p.Id == "kiem_tam_thong_minh") ? 0.15f : 0f;
+        _kiemYStacks = 0;
+        _kiemYTimer = 0f;
+
+        // Cấp phát túi đồ mặc định
         GiveInitialInventoryItems();
 
         _alchemistSpawner = new ConsumableSpawner(AlchemistPosition, 15f, "dan_hoi_xuan", GetItemName("dan_hoi_xuan"), InventoryComponent.TYPE_CONSUMABLE, 1);
@@ -240,9 +314,6 @@ public class Game1 : Game
             _droppedItems.Add(new DroppedItem(pos, id, name, type, qty));
             _floatingTexts.Add(new FloatingText(pos - new Vector2(0, 15), $"+ {name}", Color.LightSkyBlue, 1.5f));
         };
-
-        _previousKeyState = Keyboard.GetState();
-        _previousMouseState = Mouse.GetState();
 
         // Sinh ngẫu nhiên một số Yêu Thú ban đầu rải rác trên bản đồ
         for (int i = 0; i < 15; i++)
@@ -258,7 +329,181 @@ public class Game1 : Game
             }
         }
 
-        base.Initialize();
+        _screen = GameScreen.Playing;
+        Console.WriteLine($"[Lưu Phái] Bắt đầu game mới: {chosenClass.Name}" +
+                          (isPhapTu ? $" ({chosenElement.GetDisplayName()})" : "") + ".");
+    }
+
+    // ====================================================================
+    // MÀN HÌNH CHỌN LƯU PHÁI
+    // ====================================================================
+
+    private void HandleClassSelectInput(KeyboardState keys)
+    {
+        if (_classes.Count == 0) return; // Lỗi nạp dữ liệu — không cho chọn để tránh crash
+
+        if (_classSelectStep == ClassSelectStep.PickClass)
+        {
+            for (int i = 0; i < _classes.Count && i < 4; i++)
+            {
+                if (IsKeyJustPressed(keys, Keys.D1 + i))
+                {
+                    _selectedClassIndex = i;
+                }
+            }
+
+            if (IsKeyJustPressed(keys, Keys.Enter))
+            {
+                var chosen = _classes[_selectedClassIndex];
+                if (chosen.HasElementalSkills)
+                {
+                    _classSelectStep = ClassSelectStep.PickElement;
+                    _selectedElementIndex = 0;
+                }
+                else
+                {
+                    StartNewGame(chosen, Element.None);
+                }
+            }
+        }
+        else // PickElement
+        {
+            for (int i = 0; i < PhapTuElements.Length; i++)
+            {
+                if (IsKeyJustPressed(keys, Keys.D1 + i))
+                {
+                    _selectedElementIndex = i;
+                }
+            }
+
+            if (IsKeyJustPressed(keys, Keys.Back))
+            {
+                _classSelectStep = ClassSelectStep.PickClass;
+            }
+            else if (IsKeyJustPressed(keys, Keys.Enter))
+            {
+                StartNewGame(_classes[_selectedClassIndex], PhapTuElements[_selectedElementIndex]);
+            }
+        }
+    }
+
+    private void DrawClassSelectScreen()
+    {
+        _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, null, null, null, null);
+
+        _spriteBatch.DrawString(_font, "SANDBOX TU TIÊN 2D PIXEL", new Vector2(220, 35), Color.Gold, 0f, Vector2.Zero, 1.3f, SpriteEffects.None, 0f);
+
+        if (_classes.Count == 0)
+        {
+            _spriteBatch.DrawString(_font, "LỖI: Không nạp được dữ liệu lưu phái (classes.json/skills.json).",
+                                    new Vector2(60, 200), Color.Red, 0f, Vector2.Zero, 0.9f, SpriteEffects.None, 0f);
+            _spriteBatch.End();
+            return;
+        }
+
+        if (_classSelectStep == ClassSelectStep.PickClass)
+        {
+            _spriteBatch.DrawString(_font, "Chọn Lưu Phái", new Vector2(300, 75), Color.LightSkyBlue, 0f, Vector2.Zero, 1.05f, SpriteEffects.None, 0f);
+
+            const int cardW = 180, cardH = 370, gap = 10, startX = 30, startY = 110;
+            for (int i = 0; i < _classes.Count; i++)
+            {
+                var cls = _classes[i];
+                int x = startX + i * (cardW + gap);
+                bool selected = i == _selectedClassIndex;
+
+                DrawRect(x, startY, cardW, cardH, selected ? new Color(45, 35, 70, 230) : new Color(20, 22, 38, 220));
+                DrawRect(x, startY, cardW, cardH, selected ? Color.Gold : new Color(65, 75, 110), true);
+
+                float py = startY + 10;
+                _spriteBatch.DrawString(_font, $"[{i + 1}] {cls.Name}", new Vector2(x + 10, py), selected ? Color.Gold : Color.White, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
+                py += 22;
+                py += DrawWrappedText(cls.Role, x + 10, (int)py, cardW - 20, Color.LightSalmon, 0.6f, maxLines: 2);
+                py += 4;
+                py += DrawWrappedText(cls.Description, x + 10, (int)py, cardW - 20, Color.Silver, 0.58f, maxLines: 4);
+                py += 8;
+
+                _spriteBatch.DrawString(_font, "Chỉ số:", new Vector2(x + 10, py), Color.Gray, 0f, Vector2.Zero, 0.58f, SpriteEffects.None, 0f);
+                py += 14;
+                _spriteBatch.DrawString(_font, $"HP x{cls.StatMultipliers.HP:0.0}  LL x{cls.StatMultipliers.SpiritPower:0.0}  Tốc x{cls.StatMultipliers.Speed:0.0}",
+                                        new Vector2(x + 10, py), Color.LightGreen, 0f, Vector2.Zero, 0.56f, SpriteEffects.None, 0f);
+                py += 20;
+
+                _spriteBatch.DrawString(_font, "Nội tại:", new Vector2(x + 10, py), Color.Gray, 0f, Vector2.Zero, 0.58f, SpriteEffects.None, 0f);
+                py += 14;
+                foreach (var passive in cls.Passives)
+                {
+                    _spriteBatch.DrawString(_font, $"- {passive.Name}", new Vector2(x + 10, py), Color.MediumSpringGreen, 0f, Vector2.Zero, 0.56f, SpriteEffects.None, 0f);
+                    py += 14;
+                }
+
+                if (cls.HasElementalSkills)
+                {
+                    _spriteBatch.DrawString(_font, "(Chọn hệ Linh Căn tiếp theo)", new Vector2(x + 10, startY + cardH - 18), Color.Cyan, 0f, Vector2.Zero, 0.52f, SpriteEffects.None, 0f);
+                }
+            }
+
+            _spriteBatch.DrawString(_font, "[1-4] Chọn lưu phái | [Enter] Xác nhận", new Vector2(30, 495), Color.Gold, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
+        }
+        else
+        {
+            var cls = _classes[_selectedClassIndex];
+            _spriteBatch.DrawString(_font, $"{cls.Name} — Chọn Hệ Linh Căn", new Vector2(220, 75), Color.LightSkyBlue, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0f);
+
+            string[] names = { "Hỏa", "Mộc", "Băng" };
+            Color[] colors = { Color.OrangeRed, Color.LimeGreen, Color.LightSkyBlue };
+            const int cardW = 200, cardH = 220, gap = 20, startX = 100, startY = 180;
+
+            for (int i = 0; i < PhapTuElements.Length; i++)
+            {
+                int x = startX + i * (cardW + gap);
+                bool selected = i == _selectedElementIndex;
+                DrawRect(x, startY, cardW, cardH, selected ? new Color(45, 35, 70, 230) : new Color(20, 22, 38, 220));
+                DrawRect(x, startY, cardW, cardH, selected ? Color.Gold : new Color(65, 75, 110), true);
+                _spriteBatch.DrawString(_font, $"[{i + 1}] {names[i]}", new Vector2(x + 15, startY + 20), colors[i], 0f, Vector2.Zero, 1.1f, SpriteEffects.None, 0f);
+            }
+
+            _spriteBatch.DrawString(_font, "[1-3] Chọn hệ | [Enter] Xác nhận | [Backspace] Quay lại", new Vector2(30, 495), Color.Gold, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
+        }
+
+        _spriteBatch.End();
+    }
+
+    /// <summary>Vẽ văn bản tự xuống dòng trong một khung rộng maxWidth, tối đa maxLines dòng. Trả về chiều cao đã dùng.</summary>
+    private float DrawWrappedText(string text, int x, int y, int maxWidth, Color color, float scale, int maxLines = int.MaxValue)
+    {
+        if (string.IsNullOrEmpty(text)) return 0f;
+
+        float lineHeight = _font.MeasureString("Ag").Y * scale + 1f;
+        string[] words = text.Split(' ');
+        string line = string.Empty;
+        float curY = y;
+        int lineCount = 0;
+
+        foreach (var word in words)
+        {
+            string testLine = string.IsNullOrEmpty(line) ? word : line + " " + word;
+            if (_font.MeasureString(testLine).X * scale > maxWidth && !string.IsNullOrEmpty(line))
+            {
+                _spriteBatch.DrawString(_font, line, new Vector2(x, curY), color, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+                curY += lineHeight;
+                lineCount++;
+                if (lineCount >= maxLines) return curY - y;
+                line = word;
+            }
+            else
+            {
+                line = testLine;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(line))
+        {
+            _spriteBatch.DrawString(_font, line, new Vector2(x, curY), color, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+            curY += lineHeight;
+        }
+
+        return curY - y;
     }
 
     protected override void LoadContent()
@@ -317,6 +562,15 @@ public class Game1 : Game
 
         if (currentKeyState.IsKeyDown(Keys.Escape))
             Exit();
+
+        if (_screen == GameScreen.ClassSelect)
+        {
+            HandleClassSelectInput(currentKeyState);
+            _previousKeyState = currentKeyState;
+            _previousMouseState = currentMouseState;
+            base.Update(gameTime);
+            return;
+        }
 
         _gameTimeManager.Update(gameTime);
         _cultivationSystem.Update(gameTime);
@@ -422,6 +676,18 @@ public class Game1 : Game
             }
         }
 
+        // Kiếm Ý (Kiếm Tu): cộng dồn sát thương khi đánh trúng, tự mất nếu ngừng đánh trúng
+        if (_kiemYTimer > 0f)
+        {
+            _kiemYTimer -= deltaTime;
+            if (_kiemYTimer <= 0f) _kiemYStacks = 0;
+        }
+        _combatSystem.PlayerDamageMultiplier = 1f + _kiemYStacks * KIEM_Y_PER_STACK;
+
+        // Vùng hiệu ứng (chiêu kiểu "zone": mưa kiếm, vùng độc, vùng hồi máu...)
+        _zoneSystem.Update(deltaTime, playerPos, _player.Cultivation.MaxHP, out float zoneHeal);
+        if (zoneHeal > 0f) _player.Cultivation.Heal(zoneHeal);
+
         _combatSystem.PlayerBonusOnHit = _player.Cultivation.HasVanDocThe ? VanDocTheOnHit : Array.Empty<OnHitEffect>();
         _combatSystem.Update();
         HandleInput(currentKeyState, currentMouseState);
@@ -435,6 +701,13 @@ public class Game1 : Game
     protected override void Draw(GameTime gameTime)
     {
         GraphicsDevice.Clear(new Color(15, 18, 32));
+
+        if (_screen == GameScreen.ClassSelect)
+        {
+            DrawClassSelectScreen();
+            base.Draw(gameTime);
+            return;
+        }
 
         // Rung giật màn hình
         Vector2 shakeOffset = Vector2.Zero;
@@ -494,6 +767,15 @@ public class Game1 : Game
             float progress = 1f - Math.Clamp(strike.Delay / CultivationComponent.LIGHTNING_STRIKE_DELAY, 0f, 1f);
             _spriteBatch.Draw(_ringTexture, strike.Position, null, Color.Red * (0.25f + 0.55f * progress),
                               0f, ringOrigin, strike.Radius / ringOrigin.X, SpriteEffects.None, 0f);
+        }
+
+        // 1.2. Vùng hiệu ứng đang hoạt động (chiêu kiểu "zone")
+        foreach (var zone in _zoneSystem.Zones)
+        {
+            Color zoneColor = zone.DamagePerTick > 0f ? Color.OrangeRed : Color.LimeGreen;
+            float pulse = 0.5f + 0.15f * (float)Math.Sin(time * 5f);
+            _spriteBatch.Draw(_ringTexture, zone.Position, null, zoneColor * (0.2f + 0.1f * pulse),
+                              0f, ringOrigin, zone.Radius / ringOrigin.X, SpriteEffects.None, 0f);
         }
 
         // 1.5. NPC Đan Sư và Lò Luyện
@@ -635,7 +917,7 @@ public class Game1 : Game
 
         if (!_isCraftingOpen && Vector2.Distance(_player.Position, ForgePosition) <= 60f)
         {
-            DrawCenteredText("Nhấn [C] để Luyện Đan / Luyện Khí", ForgePosition - new Vector2(0, _forgeTexture.Height * 1.5f * forgeScale / 2f + 35f), Color.Gold, 0.65f);
+            DrawCenteredText("Nhấn [G] để Luyện Đan / Luyện Khí", ForgePosition - new Vector2(0, _forgeTexture.Height * 1.5f * forgeScale / 2f + 35f), Color.Gold, 0.65f);
         }
 
         // Nhãn tên vật phẩm rơi
@@ -717,7 +999,7 @@ public class Game1 : Game
             (cult.CurrentState == CultivationState.Breakthrough && !dodgingTribulation))
             return;
 
-        float speed = 180f;
+        float speed = BASE_MOVE_SPEED * cult.MoveSpeedMultiplier;
         Vector2 dir = Vector2.Zero;
 
         if (keys.IsKeyDown(Keys.W) || keys.IsKeyDown(Keys.Up)) dir.Y -= 1f;
@@ -788,8 +1070,8 @@ public class Game1 : Game
             TryStartBreakthrough();
         }
 
-        // --- [C] Mở/Đóng Lò Luyện ---
-        if (IsKeyJustPressed(keys, Keys.C))
+        // --- [G] Mở/Đóng Lò Luyện ---
+        if (IsKeyJustPressed(keys, Keys.G))
         {
             if (Vector2.Distance(_player.Position, ForgePosition) <= 60f)
             {
@@ -827,7 +1109,7 @@ public class Game1 : Game
         {
             if (_dbManager.IsConnected)
             {
-                bool saved = _dbManager.SavePlayerState(_player, _monsters, _droppedItems, _formations);
+                bool saved = _dbManager.SavePlayerState(_player, _skillLoadout, _monsters, _droppedItems, _formations);
                 _floatingTexts.Add(saved
                     ? new FloatingText(_player.Position - new Vector2(0, 40), "Đã lưu game!", Color.Lime, 2.0f, 1.1f)
                     : new FloatingText(_player.Position - new Vector2(0, 40), "Lưu thất bại!", Color.Red));
@@ -844,15 +1126,30 @@ public class Game1 : Game
             LoadWorldFromDatabase();
         }
 
-        // --- [Q] / [E] Pháp Thuật ---
+        // --- [Q] / [E] / [C] Chiêu 1-3, [Shift] Lướt, [X] Tuyệt kỹ ---
         if (IsKeyJustPressed(keys, Keys.Q))
         {
-            TriggerTechnique(1, mouseWorldPos);
+            TriggerSkill(SkillSlot.Skill1, mouseWorldPos);
         }
 
         if (IsKeyJustPressed(keys, Keys.E))
         {
-            TriggerTechnique(2, mouseWorldPos);
+            TriggerSkill(SkillSlot.Skill2, mouseWorldPos);
+        }
+
+        if (IsKeyJustPressed(keys, Keys.C))
+        {
+            TriggerSkill(SkillSlot.Skill3, mouseWorldPos);
+        }
+
+        if (IsKeyJustPressed(keys, Keys.LeftShift) || IsKeyJustPressed(keys, Keys.RightShift))
+        {
+            TriggerSkill(SkillSlot.Dash, mouseWorldPos);
+        }
+
+        if (IsKeyJustPressed(keys, Keys.X))
+        {
+            TriggerSkill(SkillSlot.Ultimate, mouseWorldPos);
         }
 
         // --- [T] Bày Trận Pháp ---
@@ -907,7 +1204,7 @@ public class Game1 : Game
             }
         }
 
-        // Chuột trái: phóng phi kiếm hoặc thao tác Lò Luyện
+        // Chuột trái: đòn đánh thường (chiêu "basic" của lưu phái) hoặc thao tác Lò Luyện
         if (mouse.LeftButton == ButtonState.Pressed && _previousMouseState.LeftButton == ButtonState.Released)
         {
             bool clickInInventory = _isInventoryOpen && mouse.X >= 510 && mouse.Y <= 520;
@@ -919,16 +1216,14 @@ public class Game1 : Game
             {
                 HandleCraftingClick(mouse.X, mouse.Y);
             }
-            else if (!clickInInventory &&
-                     cult.CurrentState != CultivationState.Dead &&
-                     cult.CurrentState != CultivationState.Breakthrough)
+            else if (!clickInInventory)
             {
-                FireActiveWeapon(mouseWorldPos);
+                TriggerSkill(SkillSlot.Basic, mouseWorldPos);
             }
         }
 
-        // Chuột phải: gọi Yêu Thú
-        if (mouse.RightButton == ButtonState.Pressed && _previousMouseState.RightButton == ButtonState.Released)
+        // Chuột giữa: gọi Yêu Thú (phục vụ kiểm thử)
+        if (mouse.MiddleButton == ButtonState.Pressed && _previousMouseState.MiddleButton == ButtonState.Released)
         {
             SpawnRandomMonster(mouseWorldPos);
         }
@@ -942,7 +1237,7 @@ public class Game1 : Game
             return;
         }
 
-        bool loaded = _dbManager.LoadPlayerState(_player, _dataLoader, out string monstersJson, out string droppedItemsJson, out string formationsJson);
+        bool loaded = _dbManager.LoadPlayerState(_player, _skillLoadout, _dataLoader, out string monstersJson, out string droppedItemsJson, out string formationsJson);
         if (!loaded)
         {
             _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 40), "Tải game thất bại!", Color.Red));
@@ -956,6 +1251,17 @@ public class Game1 : Game
         _lightningStrikes.Clear();
         _projectilePool.Clear();
         _particles.Clear();
+        _skillSystem.ResetCooldowns();
+        _zoneSystem.Clear();
+        _kiemYStacks = 0;
+        _kiemYTimer = 0f;
+
+        // Ghi nhận lại bộ chiêu đã mở khóa theo cảnh giới vừa nạp, tránh spam thông báo "lĩnh ngộ" sai
+        _previouslyUnlockedSkillIds.Clear();
+        foreach (var skill in _skillLoadout.GetUnlockedSkills(_player.Cultivation.CurrentRealm))
+        {
+            _previouslyUnlockedSkillIds.Add(skill.Id);
+        }
 
         // 2. Phục hồi Yêu Thú
         if (!string.IsNullOrEmpty(monstersJson))
@@ -1037,26 +1343,92 @@ public class Game1 : Game
     // PHÁP THUẬT, PHÁP KHÍ & TRẬN PHÁP
     // ====================================================================
 
-    private void TriggerTechnique(int slot, Vector2 targetPos)
+    /// <summary>
+    /// Thử thi triển chiêu ở một ô kỹ năng. Chiêu "projectile" tự bắn ra bên trong SkillSystem;
+    /// "dash" và "zone" được thi hành ở đây (ApplyDash / ZoneSystem.Spawn).
+    /// </summary>
+    private void TriggerSkill(SkillSlot slot, Vector2 targetPos)
     {
-        var cult = _player.Cultivation;
-        TechniqueData? technique = slot == 1 ? cult.Skill1 : cult.Skill2;
+        var skill = _skillLoadout.GetSkill(slot);
+        var result = _skillSystem.TryCast(_player.Cultivation, _skillLoadout, slot, _player.Position, targetPos, out var outcome);
 
-        var result = _skillSystem.TryCast(cult, technique, _player.Position, targetPos);
+        if (result == CastResult.Success)
+        {
+            ExecuteNonProjectileOutcome(skill!, targetPos, outcome);
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 55), $"{skill!.Name}!", Color.YellowGreen, 1.5f, 1.2f));
+            return;
+        }
+
         string? message = result switch
         {
-            CastResult.Success => $"{technique!.Name}!",
-            CastResult.NotLearned => $"Pháp thuật {slot} chưa lĩnh ngộ!",
+            CastResult.NotLearned => "Ô chiêu trống!",
+            CastResult.NotUnlocked when skill != null =>
+                $"Cần đạt {CultivationComponent.GetRealmDisplayName(Enum.Parse<CultivationRealm>(skill.UnlockRealm, true))}!",
+            CastResult.NotSupported => "Chiêu này chưa hỗ trợ!",
             CastResult.NotEnoughSpiritPower => "Không đủ Linh Lực!",
-            CastResult.OnCooldown => $"Đang hồi chiêu ({_skillSystem.GetCooldownRemaining(technique!.Id):F1}s)",
+            CastResult.OnCooldown => $"Đang hồi chiêu ({_skillSystem.GetCooldownRemaining(skill!.Id):F1}s)",
             _ => null
         };
-        if (message == null) return;
+        if (message == null) return; // Incapacitated: im lặng, không spam thông báo
 
-        bool success = result == CastResult.Success;
-        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, success ? 55 : 35), message,
-                                            success ? Color.YellowGreen : Color.OrangeRed,
-                                            success ? 1.5f : 1.2f, success ? 1.2f : 1.0f));
+        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 35), message, Color.OrangeRed));
+    }
+
+    /// <summary>Thi hành phần "dash" hoặc "zone" của chiêu vừa thi triển thành công (projectile đã tự bắn trong SkillSystem).</summary>
+    private void ExecuteNonProjectileOutcome(SkillData skill, Vector2 targetPos, SkillCastOutcome outcome)
+    {
+        if (!SkillExecutionTypeExtensions.TryParse(skill.Type, out var execType)) return;
+
+        if (execType == SkillExecutionType.Dash)
+        {
+            ApplyDash(skill, targetPos, outcome);
+        }
+        else if (execType == SkillExecutionType.Zone)
+        {
+            _zoneSystem.Spawn(targetPos, skill, outcome.EffectiveDamagePerTick);
+            SpawnElementalBurst(targetPos, ElementExtensions.ParseElement(skill.Element), 10);
+        }
+    }
+
+    /// <summary>Di chuyển tức thời theo hướng con trỏ, gây sát thương + đẩy lùi Yêu Thú quanh điểm đến.</summary>
+    private void ApplyDash(SkillData skill, Vector2 targetPos, SkillCastOutcome outcome)
+    {
+        Vector2 origin = _player.Position;
+        Vector2 dir = targetPos - origin;
+        if (dir == Vector2.Zero) dir = new Vector2(1, 0);
+        else dir.Normalize();
+
+        Vector2 destination = origin + dir * skill.DashDistance;
+        destination.X = Math.Clamp(destination.X, 16f, MAP_WIDTH - 16f);
+        destination.Y = Math.Clamp(destination.Y, 16f, MAP_HEIGHT - 16f);
+
+        _player.PositionX = destination.X;
+        _player.PositionY = destination.Y;
+
+        if (outcome.EffectiveDamage > 0f)
+        {
+            foreach (var monster in _combatSystem.QueryCircle(destination, DASH_IMPACT_RADIUS))
+            {
+                _combatSystem.ApplyHit(monster, outcome.EffectiveDamage, Element.None, isSilent: false, null, ProjectileOwner.Player, monster.Position);
+                _combatSystem.ApplyKnockback(monster, origin, skill.Knockback);
+            }
+        }
+
+        SpawnElementalBurst(origin, Element.None, 10);
+        SpawnElementalBurst(destination, Element.None, 10);
+        TriggerShake(0.1f, 2f);
+    }
+
+    /// <summary>So sánh bộ chiêu mở khóa trước/sau khi lên cảnh giới, thông báo chiêu mới lĩnh ngộ.</summary>
+    private void AnnounceNewlyUnlockedSkills()
+    {
+        foreach (var skill in _skillLoadout.GetUnlockedSkills(_player.Cultivation.CurrentRealm))
+        {
+            if (_previouslyUnlockedSkillIds.Add(skill.Id))
+            {
+                _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 100), $"Lĩnh ngộ: {skill.Name}", Color.YellowGreen, 3.0f, 1.2f));
+            }
+        }
     }
 
     private void PlaceFormation()
@@ -1117,55 +1489,6 @@ public class Game1 : Game
         nearest.Reload();
         _floatingTexts.Add(new FloatingText(nearest.Position - new Vector2(0, 20), "Nạp đầy linh lực!", Color.LimeGreen));
         Console.WriteLine($"[Trận Pháp] ⚙ Nạp Linh Thạch cho {nearest.Name} tại {nearest.Position.X:F0},{nearest.Position.Y:F0}.");
-    }
-
-    private void FireActiveWeapon(Vector2 targetPos)
-    {
-        Vector2 center = _player.Position;
-        Vector2 dir = targetPos - center;
-
-        if (dir == Vector2.Zero) dir = new Vector2(1, 0);
-        else dir.Normalize();
-
-        var weapon = _player.Inventory.EquippedWeapon;
-
-        float damage = 25f;
-        float range = 250f;
-        int count = 1;
-        bool silent = false;
-        Element element = Element.None;
-        IReadOnlyList<OnHitEffect> effects = Array.Empty<OnHitEffect>();
-
-        if (weapon != null)
-        {
-            damage = weapon.CombatStats?.BaseDamage ?? 25f;
-            range = (weapon.CombatStats?.Range ?? 25f) * 8f;
-            count = Math.Max(1, weapon.CombatStats?.ProjectileCount ?? 1);
-            silent = weapon.CombatStats?.SilentAttack ?? false;
-            element = ElementExtensions.ParseElement(weapon.Element);
-            effects = weapon.OnHitEffects;
-        }
-
-        float baseAngle = (float)Math.Atan2(dir.Y, dir.X);
-        float speed = 400f;
-
-        if (count == 1)
-        {
-            _projectilePool.Spawn(center, dir, damage, range, speed, element, silent, effects);
-        }
-        else
-        {
-            float spreadAngle = count >= 10 ? 0.6f : 0.2f;
-            float step = spreadAngle / (count - 1);
-            float startAngle = baseAngle - spreadAngle / 2f;
-
-            for (int i = 0; i < count; i++)
-            {
-                _projectilePool.Spawn(center, CombatMath.AngleToVector(startAngle + step * i), damage, range, speed, element, silent, effects);
-            }
-        }
-
-        Console.WriteLine($"[Chiến Đấu] ⚔ Phóng {count} đạo {GetItemName(weapon?.ItemId ?? string.Empty)} (Hệ: {element})");
     }
 
     private void SpawnRandomMonster(Vector2 spawnPos)
@@ -1394,10 +1717,10 @@ public class Game1 : Game
         DrawRect(startX - 10, startY - 5, 305, 170, new Color(65, 75, 110), true);
         DrawRect(startX - 9, startY - 4, 303, 1, new Color(100, 115, 160, 150));
 
-        // Đạo hiệu và cảnh giới
+        // Đạo hiệu, lưu phái và cảnh giới
         string realmName = CultivationComponent.GetRealmDisplayName(cult.CurrentRealm);
-        _spriteBatch.DrawString(_font, $"{_player.Name} | {realmName} tầng {cult.CurrentLevel}",
-                                new Vector2(startX, startY), Color.Gold);
+        _spriteBatch.DrawString(_font, $"{_player.Name} | {_skillLoadout.PlayerClass.Name} | {realmName} tầng {cult.CurrentLevel}",
+                                new Vector2(startX, startY), Color.Gold, 0f, Vector2.Zero, 0.92f, SpriteEffects.None, 0f);
 
         int hpY = startY + spacing + 6;
         DrawPremiumBar(startX, hpY, barW, barH, cult.HP / cult.MaxHP, new Color(50, 15, 15), new Color(230, 45, 45), new Color(120, 40, 40), $"HP: {cult.HP:F0}/{cult.MaxHP:F0}", Color.Tomato);
@@ -1420,28 +1743,44 @@ public class Game1 : Game
         _spriteBatch.DrawString(_font, $"Đột phá: {cult.CalculateBreakthroughSuccessRate():P0} (Đan +{cult.PillBuff:P0}, Tâm ma -{cult.HeartDemon:P0})",
                                 new Vector2(startX, wY + 53), cult.HeartDemon > 0 ? Color.Violet : Color.LightGreen, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
 
-        // --- Pháp Thuật chủ động (Q / E) ---
+        // --- Thanh Chiêu (6 ô kỹ năng của lưu phái) ---
         int skillX = 335;
         int skillY = 15;
-        DrawRect(skillX, skillY, 165, 140, new Color(20, 22, 38, 220));
-        DrawRect(skillX, skillY, 165, 140, new Color(65, 75, 110), true);
-        DrawRect(skillX + 1, skillY + 1, 163, 1, new Color(100, 115, 160, 150));
-        _spriteBatch.DrawString(_font, "PHÁP THUẬT", new Vector2(skillX + 10, skillY + 8), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
-        DrawRect(skillX + 8, skillY + 24, 149, 1, new Color(65, 75, 110));
+        int skillPanelH = 178;
+        DrawRect(skillX, skillY, 300, skillPanelH, new Color(20, 22, 38, 220));
+        DrawRect(skillX, skillY, 300, skillPanelH, new Color(65, 75, 110), true);
+        DrawRect(skillX + 1, skillY + 1, 298, 1, new Color(100, 115, 160, 150));
+        _spriteBatch.DrawString(_font, "THANH CHIÊU", new Vector2(skillX + 10, skillY + 8), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+        DrawRect(skillX + 8, skillY + 24, 284, 1, new Color(65, 75, 110));
 
-        string qLabel = cult.Skill1 != null ? $"Q: {cult.Skill1.Name}\n   ({cult.Skill1.SPCost} linh lực)" : "Q: [Chưa lĩnh ngộ]";
-        _spriteBatch.DrawString(_font, qLabel, new Vector2(skillX + 10, skillY + 32), cult.Skill1 != null ? Color.MediumSpringGreen : Color.DarkGray, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
+        (SkillSlot slot, string key)[] slotKeys =
+        {
+            (SkillSlot.Basic, "LMB"), (SkillSlot.Skill1, "Q"), (SkillSlot.Skill2, "E"),
+            (SkillSlot.Skill3, "C"), (SkillSlot.Dash, "Shift"), (SkillSlot.Ultimate, "X")
+        };
 
-        string eLabel = cult.Skill2 != null ? $"E: {cult.Skill2.Name}\n   ({cult.Skill2.SPCost} linh lực)" : "E: [Chưa lĩnh ngộ]";
-        _spriteBatch.DrawString(_font, eLabel, new Vector2(skillX + 10, skillY + 80), cult.Skill2 != null ? Color.Gold : Color.DarkGray, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
+        int rowY = skillY + 30;
+        foreach (var (slot, key) in slotKeys)
+        {
+            DrawSkillSlotRow(slot, key, skillX + 8, rowY, cult.CurrentRealm);
+            rowY += 24;
+        }
+
+        int bannerY = skillY + skillPanelH + 5;
 
         // Thể chất Vạn Độc Thể
         if (cult.HasVanDocThe)
         {
-            DrawRect(skillX, skillY + 145, 165, 30, new Color(30, 15, 45, 220));
-            DrawRect(skillX, skillY + 145, 165, 30, Color.Purple, true);
-            _spriteBatch.DrawString(_font, "[Vạn Độc Thể]", new Vector2(skillX + 8, skillY + 147), Color.Magenta, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
-            _spriteBatch.DrawString(_font, "+50HP +30LL 25% tẩm độc", new Vector2(skillX + 8, skillY + 159), Color.White, 0f, Vector2.Zero, 0.65f, SpriteEffects.None, 0f);
+            DrawRect(skillX, bannerY, 300, 28, new Color(30, 15, 45, 220));
+            DrawRect(skillX, bannerY, 300, 28, Color.Purple, true);
+            _spriteBatch.DrawString(_font, "[Vạn Độc Thể] +50HP +30LL 25% tẩm độc", new Vector2(skillX + 8, bannerY + 6), Color.Magenta, 0f, Vector2.Zero, 0.68f, SpriteEffects.None, 0f);
+            bannerY += 33;
+        }
+
+        // Kiếm Ý (nội tại Kiếm Tu)
+        if (_skillLoadout.PlayerClass.Id == "kiem_tu" && _kiemYStacks > 0)
+        {
+            _spriteBatch.DrawString(_font, $"Kiếm Ý x{_kiemYStacks} (+{_kiemYStacks * 3}% sát thương)", new Vector2(skillX + 8, bannerY + 4), Color.Cyan, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
         }
 
         float pulse = (float)(Math.Sin(time * 8.0) * 0.4 + 0.6);
@@ -1475,8 +1814,48 @@ public class Game1 : Game
         DrawRect(20, guideY, 760, 50, new Color(18, 18, 30, 220));
         DrawRect(20, guideY, 760, 50, new Color(55, 60, 85), true);
         DrawRect(21, guideY + 1, 758, 1, new Color(90, 100, 135, 150));
-        _spriteBatch.DrawString(_font, "[WASD] Di chuyển | [Chuột trái] Phi kiếm | [Chuột phải] Gọi Yêu Thú | [T] Bày trận | [Y] Đổi trận | [F] Nạp Linh Thạch", new Vector2(35, guideY + 7), Color.Silver, 0f, Vector2.Zero, 0.72f, SpriteEffects.None, 0f);
-        _spriteBatch.DrawString(_font, "[M] Đả tọa | [R] Đột phá | [Q/E] Pháp thuật | [I] Túi | [Tab] Đổi pháp khí | [1-5] Dùng | [C] Lò luyện | [F5/F9] Lưu/Tải", new Vector2(35, guideY + 27), Color.Gold, 0f, Vector2.Zero, 0.72f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, "[WASD] Di chuyển | [Chuột trái] Đánh thường | [Chuột giữa] Gọi Yêu Thú | [T] Bày trận | [Y] Đổi trận | [F] Nạp Linh Thạch", new Vector2(35, guideY + 7), Color.Silver, 0f, Vector2.Zero, 0.68f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, "[M] Đả tọa | [R] Đột phá | [Q/E/C] Chiêu | [Shift] Lướt | [X] Tuyệt kỹ | [I] Túi | [G] Lò luyện | [1-5] Dùng | [F5/F9] Lưu/Tải", new Vector2(35, guideY + 27), Color.Gold, 0f, Vector2.Zero, 0.68f, SpriteEffects.None, 0f);
+    }
+
+    /// <summary>Vẽ một dòng trong Thanh Chiêu: tên chiêu, và trạng thái (trống/khóa/hồi chiêu/sẵn sàng + bậc công pháp).</summary>
+    private void DrawSkillSlotRow(SkillSlot slot, string key, int x, int y, CultivationRealm realm)
+    {
+        var skill = _skillLoadout.GetSkill(slot);
+        if (skill == null)
+        {
+            _spriteBatch.DrawString(_font, $"[{key}] (Trống)", new Vector2(x, y), Color.DarkGray, 0f, Vector2.Zero, 0.65f, SpriteEffects.None, 0f);
+            return;
+        }
+
+        string label;
+        Color color;
+
+        if (!_skillLoadout.IsUnlocked(slot, realm))
+        {
+            string requiredRealm = Enum.TryParse<CultivationRealm>(skill.UnlockRealm, true, out var required)
+                ? CultivationComponent.GetRealmDisplayName(required)
+                : skill.UnlockRealm;
+            label = $"[{key}] {skill.Name} (Cần {requiredRealm})";
+            color = Color.DarkGray;
+        }
+        else
+        {
+            float cooldown = _skillSystem.GetCooldownRemaining(skill.Id);
+            if (cooldown > 0f)
+            {
+                label = $"[{key}] {skill.Name} ({cooldown:F1}s)";
+                color = Color.OrangeRed;
+            }
+            else
+            {
+                int tier = _skillLoadout.GetMasteryTier(skill);
+                label = tier > 0 ? $"[{key}] {skill.Name} · {SkillLoadoutComponent.GetMasteryTierName(tier)}" : $"[{key}] {skill.Name}";
+                color = Color.MediumSpringGreen;
+            }
+        }
+
+        _spriteBatch.DrawString(_font, label, new Vector2(x, y), color, 0f, Vector2.Zero, 0.65f, SpriteEffects.None, 0f);
     }
 
     private void DrawInventoryUI()
@@ -1593,7 +1972,6 @@ public class Game1 : Game
         // Tải trước dữ liệu từ JSON tĩnh để phòng hờ MySQL offline
         var localWeapons = _dataLoader.LoadMagicWeapons();
         var localConsumables = _dataLoader.LoadConsumables();
-        _techniques = _dataLoader.LoadTechniques();
 
         if (_dbManager != null && _dbManager.IsConnected)
         {
@@ -1616,14 +1994,14 @@ public class Game1 : Game
 
         BuildRecipes();
 
-        // Nạp dữ liệu Lưu Phái / Chiêu Thức (chưa nối vào lối chơi — kiểm tra tính toàn vẹn tham chiếu ngay
-        // lúc khởi động để bắt lỗi đánh máy trong JSON sớm, trước khi màn hình chọn lưu phái được thêm vào).
-        var classes = _dataLoader.LoadClasses();
-        var skills = _dataLoader.LoadSkills();
-        var classDataErrors = GameDataValidator.Validate(classes, skills);
+        // Nạp dữ liệu Lưu Phái / Chiêu Thức — kiểm tra tính toàn vẹn tham chiếu ngay lúc khởi động
+        // để bắt lỗi đánh máy trong JSON sớm, trước khi người chơi vào màn hình chọn lưu phái.
+        _classes = _dataLoader.LoadClasses();
+        _skills = _dataLoader.LoadSkills();
+        var classDataErrors = GameDataValidator.Validate(_classes, _skills);
         if (classDataErrors.Count == 0)
         {
-            Console.WriteLine($"[Lưu Phái] Đã nạp {classes.Count} lưu phái, {skills.Count} chiêu thức — dữ liệu hợp lệ.");
+            Console.WriteLine($"[Lưu Phái] Đã nạp {_classes.Count} lưu phái, {_skills.Count} chiêu thức — dữ liệu hợp lệ.");
         }
         else
         {
@@ -1667,7 +2045,7 @@ public class Game1 : Game
     private void AutoSave(float textOffsetY)
     {
         if (!_dbManager.IsConnected) return;
-        _dbManager.SavePlayerState(_player, _monsters, _droppedItems, _formations);
+        _dbManager.SavePlayerState(_player, _skillLoadout, _monsters, _droppedItems, _formations);
         _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, textOffsetY), "Tự động lưu", Color.Lime * 0.7f, 1.5f, 0.9f));
     }
 
@@ -1684,6 +2062,7 @@ public class Game1 : Game
         {
             _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 90), $"Bước vào {e.NewRealm}!", Color.Gold, 3.0f, 1.3f));
             SpawnBreakthroughBurst(_player.Position);
+            AnnounceNewlyUnlockedSkills();
         });
 
         _eventManager.Subscribe<OnBottleneckReachedEvent>(e =>
@@ -1713,11 +2092,6 @@ public class Game1 : Game
             SpawnExplosion(_player.Position, Color.MediumPurple, 30);
         });
 
-        _eventManager.Subscribe<OnTechniqueLearnedEvent>(e =>
-        {
-            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 100), $"Lĩnh ngộ: {e.TechniqueName}", Color.YellowGreen, 3.0f, 1.2f));
-        });
-
         _eventManager.Subscribe<OnLightningStrikeEvent>(e =>
         {
             for (int i = 0; i < e.StrikeCount; i++)
@@ -1737,6 +2111,13 @@ public class Game1 : Game
             _floatingTexts.Add(new FloatingText(e.Position - new Vector2(0, 15), text, color, 1.3f, heavy ? 1.25f : 1.0f));
             TriggerShake(heavy ? 0.18f : 0.1f, heavy ? 4.5f : 2.5f);
             SpawnElementalBurst(e.ImpactPosition, e.Element, heavy ? 12 : 6);
+
+            // Kiếm Ý (Kiếm Tu): mỗi đòn của người chơi đánh trúng +1 tầng, làm mới thời gian tự mất
+            if (e.Owner == ProjectileOwner.Player && _skillLoadout?.PlayerClass.Id == "kiem_tu")
+            {
+                _kiemYStacks = Math.Min(KIEM_Y_MAX_STACKS, _kiemYStacks + 1);
+                _kiemYTimer = KIEM_Y_DECAY_TIME;
+            }
         });
 
         _eventManager.Subscribe<OnStatusAppliedEvent>(e =>

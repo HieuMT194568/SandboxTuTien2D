@@ -1,10 +1,7 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using Microsoft.Xna.Framework;
 using SandboxTuTien.Core;
 using SandboxTuTien.Core.Combat;
-using SandboxTuTien.Data.Models;
 
 namespace SandboxTuTien.Components
 {
@@ -130,6 +127,15 @@ namespace SandboxTuTien.Components
         /// <summary>Hệ của Linh Căn — quyết định Pháp Thuật lĩnh ngộ khi đột phá.</summary>
         public Element SpiritRootElement { get; set; }
 
+        /// <summary>Hệ số nhân HP tối đa theo lưu phái (VD: Thể Tu 1.5, Pháp Tu 0.8).</summary>
+        public float HpMultiplier { get; }
+
+        /// <summary>Hệ số nhân Linh Lực tối đa theo lưu phái.</summary>
+        public float SpiritPowerMultiplier { get; }
+
+        /// <summary>Hệ số nhân tốc độ di chuyển theo lưu phái (Game1 đọc khi tính di chuyển).</summary>
+        public float MoveSpeedMultiplier { get; }
+
         /// <summary>Trạng thái FSM hiện tại.</summary>
         public CultivationState CurrentState { get; private set; }
 
@@ -160,12 +166,6 @@ namespace SandboxTuTien.Components
 
         /// <summary>Tâm Ma (0 → 0.5) — trừ vào tỷ lệ đột phá, tăng khi thất bại, tiêu tan khi thành công.</summary>
         public float HeartDemon { get; private set; }
-
-        /// <summary>Pháp Thuật chủ động thứ nhất (phím Q), lĩnh ngộ sau lần đột phá đầu.</summary>
-        public TechniqueData? Skill1 { get; private set; }
-
-        /// <summary>Pháp Thuật chủ động thứ hai (phím E), lĩnh ngộ sau lần đột phá thứ hai.</summary>
-        public TechniqueData? Skill2 { get; private set; }
 
         /// <summary>Cờ đánh dấu người chơi sở hữu thể chất đặc biệt Vạn Độc Thể.</summary>
         public bool HasVanDocThe { get; private set; }
@@ -279,9 +279,6 @@ namespace SandboxTuTien.Components
 
         private readonly EventManager _eventManager;
 
-        /// <summary>Danh sách Pháp Thuật (data-driven) để lĩnh ngộ theo Linh Căn.</summary>
-        private readonly IReadOnlyList<TechniqueData> _techniques;
-
         /// <summary>Random generator cho các tính toán xác suất.</summary>
         private readonly Random _random = new();
 
@@ -301,19 +298,24 @@ namespace SandboxTuTien.Components
         /// Khởi tạo CultivationComponent.
         /// </summary>
         /// <param name="eventManager">EventBus để publish sự kiện.</param>
-        /// <param name="techniques">Danh sách Pháp Thuật nạp từ techniques.json.</param>
         /// <param name="innateLevel">Tầng tu vi ban đầu (0-10).</param>
         /// <param name="spiritRootMultiplier">Phẩm chất Linh Căn (0.0-2.0).</param>
         /// <param name="spiritRootElement">Hệ Linh Căn.</param>
-        public CultivationComponent(EventManager eventManager, IReadOnlyList<TechniqueData> techniques,
-                                    int innateLevel, float spiritRootMultiplier, Element spiritRootElement)
+        /// <param name="hpMultiplier">Hệ số nhân HP tối đa theo lưu phái (mặc định 1.0).</param>
+        /// <param name="spiritPowerMultiplier">Hệ số nhân Linh Lực tối đa theo lưu phái (mặc định 1.0).</param>
+        /// <param name="moveSpeedMultiplier">Hệ số nhân tốc độ di chuyển theo lưu phái (mặc định 1.0).</param>
+        public CultivationComponent(EventManager eventManager, int innateLevel, float spiritRootMultiplier,
+                                    Element spiritRootElement, float hpMultiplier = 1f,
+                                    float spiritPowerMultiplier = 1f, float moveSpeedMultiplier = 1f)
         {
             _eventManager = eventManager ?? throw new ArgumentNullException(nameof(eventManager));
-            _techniques = techniques ?? throw new ArgumentNullException(nameof(techniques));
 
             CurrentLevel = Math.Clamp(innateLevel, 0, 10);
             SpiritRootMultiplier = Math.Clamp(spiritRootMultiplier, 0f, 2.0f);
             SpiritRootElement = spiritRootElement;
+            HpMultiplier = hpMultiplier;
+            SpiritPowerMultiplier = spiritPowerMultiplier;
+            MoveSpeedMultiplier = moveSpeedMultiplier;
             BreakthroughCount = 0;
             // Khởi đầu đúng mốc bình cảnh (VD: tầng 10) thì phải đột phá trước
             CurrentState = IsAtBottleneck() ? CultivationState.BreakthroughReady : CultivationState.Idle;
@@ -666,27 +668,10 @@ namespace SandboxTuTien.Components
             MaxSpiritPower = CalculateMaxSpiritPower(CurrentLevel);
             SpiritPower = MaxSpiritPower;
 
-            // Lĩnh ngộ Pháp Thuật theo Linh Căn
-            TechniqueData? learned = null;
-            if (BreakthroughCount == 1)
-            {
-                Skill1 = FindTechnique(1);
-                learned = Skill1;
-            }
-            else if (BreakthroughCount == 2)
-            {
-                Skill2 = FindTechnique(2);
-                learned = Skill2;
-            }
-
             Console.WriteLine($"[ĐỘT PHÁ] ★★★ {OwnerName} " +
                               (wasHeavenly ? "vượt qua Thiên Kiếp" : "phá vỡ bình cảnh") +
                               $" tầng {CurrentLevel} THÀNH CÔNG! ★★★");
             Console.WriteLine($"           Tiếp tục tu luyện để bước vào {GetRealmDisplayName(GetRealmForLevel(CurrentLevel + 1))}.");
-            if (learned != null)
-            {
-                Console.WriteLine($"           Lĩnh ngộ Pháp Thuật: {learned.Name}");
-            }
 
             _eventManager.Publish(new OnBreakthroughSuccessEvent
             {
@@ -695,16 +680,6 @@ namespace SandboxTuTien.Components
                 BreakthroughNumber = BreakthroughCount,
                 WasHeavenlyTribulation = wasHeavenly
             });
-
-            if (learned != null)
-            {
-                _eventManager.Publish(new OnTechniqueLearnedEvent
-                {
-                    PlayerName = OwnerName,
-                    TechniqueName = learned.Name,
-                    Tier = learned.Tier
-                });
-            }
         }
 
         /// <summary>
@@ -721,13 +696,6 @@ namespace SandboxTuTien.Components
             Console.WriteLine($"[CƠ DUYÊN] ★★★ {OwnerName} thức tỉnh VẠN ĐỘC THỂ! (+50 MaxHP, +30 Linh Lực, đòn đánh có 25% cơ hội tẩm độc) ★★★");
         }
 
-        /// <summary>Tìm Pháp Thuật theo tier và hệ Linh Căn (không có thì dùng pháp thuật vô thuộc tính).</summary>
-        private TechniqueData? FindTechnique(int tier)
-        {
-            return _techniques.FirstOrDefault(t => t.Tier == tier && ElementExtensions.ParseElement(t.Element) == SpiritRootElement)
-                ?? _techniques.FirstOrDefault(t => t.Tier == tier && ElementExtensions.ParseElement(t.Element) == Element.None);
-        }
-
         // ====================================================================
         // CALCULATIONS — Công thức tính toán
         // ====================================================================
@@ -741,21 +709,21 @@ namespace SandboxTuTien.Components
         }
 
         /// <summary>
-        /// HP tối đa = 100 + tầng × 20 + 50 (nếu có Vạn Độc Thể).
+        /// HP tối đa = (100 + tầng × 20 + 50 nếu có Vạn Độc Thể) × hệ số lưu phái.
         /// </summary>
         private float CalculateMaxHP(int level)
         {
             float baseHP = 100f + level * 20f;
-            return HasVanDocThe ? baseHP + 50f : baseHP;
+            return (HasVanDocThe ? baseHP + 50f : baseHP) * HpMultiplier;
         }
 
         /// <summary>
-        /// Linh Lực tối đa = 100 + tầng × 10 + 30 (nếu có Vạn Độc Thể).
+        /// Linh Lực tối đa = (100 + tầng × 10 + 30 nếu có Vạn Độc Thể) × hệ số lưu phái.
         /// </summary>
         private float CalculateMaxSpiritPower(int level)
         {
             float baseSP = 100f + level * 10f;
-            return HasVanDocThe ? baseSP + 30f : baseSP;
+            return (HasVanDocThe ? baseSP + 30f : baseSP) * SpiritPowerMultiplier;
         }
 
         /// <summary>
@@ -878,8 +846,7 @@ namespace SandboxTuTien.Components
         /// Khôi phục trạng thái tu luyện từ hệ thống lưu trữ MySQL (Save/Load).
         /// </summary>
         public void LoadState(int level, float exp, float hp, float maxHp, float sp, float maxSp,
-                              int breakthroughCount, bool hasVanDocThe, float heartDemon,
-                              string realmStr, string skill1Id, string skill2Id)
+                              int breakthroughCount, bool hasVanDocThe, float heartDemon, string realmStr)
         {
             CurrentLevel = level;
             CurrentExp = exp;
@@ -896,9 +863,6 @@ namespace SandboxTuTien.Components
             CurrentRealm = Enum.TryParse<CultivationRealm>(realmStr, out var realm)
                 ? realm
                 : GetRealmForLevel(CurrentLevel);
-
-            Skill1 = _techniques.FirstOrDefault(t => t.Id == skill1Id);
-            Skill2 = _techniques.FirstOrDefault(t => t.Id == skill2Id);
 
             // Khôi phục trạng thái FSM (bình cảnh nếu chưa đột phá mốc hiện tại)
             if (HP > 0)

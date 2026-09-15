@@ -127,12 +127,6 @@ namespace SandboxTuTien.Data
             return LoadList<ConsumableData>(Path.Combine("Data", "consumables.json"));
         }
 
-        /// <summary>Load danh sách Pháp Thuật từ techniques.json.</summary>
-        public List<TechniqueData> LoadTechniques()
-        {
-            return LoadList<TechniqueData>(Path.Combine("Data", "techniques.json"));
-        }
-
         /// <summary>Load danh sách Lưu Phái từ classes.json.</summary>
         public List<ClassData> LoadClasses()
         {

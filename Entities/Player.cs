@@ -1,15 +1,13 @@
-using System.Collections.Generic;
 using SandboxTuTien.Components;
 using SandboxTuTien.Core;
 using SandboxTuTien.Core.Combat;
-using SandboxTuTien.Data.Models;
 
 namespace SandboxTuTien.Entities
 {
     /// <summary>
     /// Thực thể Player — chỉ chứa data, không có logic render.
     /// Theo Component-Based Architecture: Player là một "entity" rỗng
-    /// được gắn các Component (CultivationComponent, InventoryComponent, v.v.).
+    /// được gắn các Component (CultivationComponent, InventoryComponent, SkillLoadoutComponent, v.v.).
     /// </summary>
     public class Player
     {
@@ -41,21 +39,25 @@ namespace SandboxTuTien.Entities
 
         /// <summary>
         /// Tạo Player mới với CultivationComponent và InventoryComponent.
+        /// SkillLoadoutComponent được Game1 gắn riêng sau khi biết lưu phái đã chọn.
         /// </summary>
         /// <param name="name">Đạo hiệu nhân vật.</param>
         /// <param name="eventManager">EventBus trung tâm.</param>
-        /// <param name="techniques">Danh sách Pháp Thuật (techniques.json).</param>
         /// <param name="innateLevel">Tầng tu vi ban đầu (0-10).</param>
         /// <param name="spiritRootMultiplier">Phẩm chất Linh Căn (0.0-2.0).</param>
         /// <param name="spiritRootElement">Hệ Linh Căn.</param>
-        public Player(string name, EventManager eventManager, IReadOnlyList<TechniqueData> techniques,
-                      int innateLevel = 1, float spiritRootMultiplier = 1.0f,
-                      Element spiritRootElement = Element.None)
+        /// <param name="hpMultiplier">Hệ số nhân HP tối đa theo lưu phái.</param>
+        /// <param name="spiritPowerMultiplier">Hệ số nhân Linh Lực tối đa theo lưu phái.</param>
+        /// <param name="moveSpeedMultiplier">Hệ số nhân tốc độ di chuyển theo lưu phái.</param>
+        public Player(string name, EventManager eventManager, int innateLevel = 1, float spiritRootMultiplier = 1.0f,
+                      Element spiritRootElement = Element.None, float hpMultiplier = 1f,
+                      float spiritPowerMultiplier = 1f, float moveSpeedMultiplier = 1f)
         {
             Name = name;
 
-            Cultivation = new CultivationComponent(eventManager, techniques, innateLevel,
-                                                   spiritRootMultiplier, spiritRootElement)
+            Cultivation = new CultivationComponent(eventManager, innateLevel, spiritRootMultiplier,
+                                                   spiritRootElement, hpMultiplier, spiritPowerMultiplier,
+                                                   moveSpeedMultiplier)
             {
                 OwnerName = name
             };

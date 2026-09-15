@@ -11,15 +11,42 @@ namespace SandboxTuTien.Systems
     public enum CastResult
     {
         Success,
+
+        /// <summary>Ô chiêu không có chiêu nào được gán (lỗi dữ liệu).</summary>
         NotLearned,
+
+        /// <summary>Chiêu tồn tại nhưng cảnh giới hiện tại chưa đủ để mở khóa.</summary>
+        NotUnlocked,
+
+        /// <summary>Kiểu ra đòn của chiêu chưa được thi triển hỗ trợ (chờ giai đoạn sau).</summary>
+        NotSupported,
+
         OnCooldown,
         NotEnoughSpiritPower,
         Incapacitated
     }
 
     /// <summary>
-    /// Hệ thống thi triển chiêu thức: kiểm tra điều kiện (đã lĩnh ngộ, hồi chiêu, Linh Lực),
-    /// quản lý thời gian hồi chiêu và phóng chiêu theo dữ liệu JSON.
+    /// Dữ liệu đã tính sẵn (gồm hệ số thông thạo) để Game1 thi hành các kiểu chiêu không tự
+    /// spawn projectile (Dash di chuyển nhân vật, Zone sinh vùng hiệu ứng).
+    /// </summary>
+    public readonly struct SkillCastOutcome
+    {
+        /// <summary>Sát thương một lần đã nhân hệ số thông thạo (Dash).</summary>
+        public float EffectiveDamage { get; init; }
+
+        /// <summary>Sát thương mỗi nhịp đã nhân hệ số thông thạo (Zone).</summary>
+        public float EffectiveDamagePerTick { get; init; }
+    }
+
+    /// <summary>
+    /// Hệ thống thi triển chiêu thức: kiểm tra mở khóa theo cảnh giới, hồi chiêu, Linh Lực,
+    /// tính hệ số thông thạo (mastery) và ghi nhận lượt dùng. Tự thi triển kiểu "projectile"
+    /// (spawn đạn); các kiểu "dash" và "zone" được xác nhận + tính toán ở đây nhưng Game1 mới
+    /// là nơi thực sự di chuyển nhân vật / sinh vùng hiệu ứng (SkillSystem không giữ tham chiếu
+    /// tới Player hay ZoneSystem để tránh phụ thuộc ngược).
+    /// Các kiểu "melee_arc", "ground_aoe", "self_buff", "channel" trả về NotSupported — sẽ được
+    /// thi triển ở giai đoạn tiếp theo khi các lưu phái khác Kiếm Tu được hoàn thiện.
     /// </summary>
     public class SkillSystem
     {
@@ -46,66 +73,101 @@ namespace SandboxTuTien.Systems
         }
 
         /// <summary>Thời gian hồi chiêu còn lại (giây).</summary>
-        public float GetCooldownRemaining(string techniqueId)
+        public float GetCooldownRemaining(string skillId)
         {
-            return _cooldowns.TryGetValue(techniqueId, out float remaining) ? remaining : 0f;
+            return _cooldowns.TryGetValue(skillId, out float remaining) ? remaining : 0f;
         }
 
         /// <summary>Xóa toàn bộ hồi chiêu (khi tải game).</summary>
         public void ResetCooldowns() => _cooldowns.Clear();
 
         /// <summary>
-        /// Thử thi triển chiêu từ origin hướng về target. Chỉ tiêu hao Linh Lực khi thành công.
+        /// Thử thi triển chiêu ở một ô trong bộ 6 ô của lưu phái. Chỉ tiêu hao Linh Lực và
+        /// ghi nhận thông thạo khi thành công.
         /// </summary>
-        public CastResult TryCast(CultivationComponent caster, TechniqueData? technique, Vector2 origin, Vector2 target)
+        public CastResult TryCast(CultivationComponent caster, SkillLoadoutComponent loadout, SkillSlot slot,
+                                  Vector2 origin, Vector2 target, out SkillCastOutcome outcome)
         {
+            outcome = default;
+
             if (caster.CurrentState == CultivationState.Dead || caster.CurrentState == CultivationState.Breakthrough)
                 return CastResult.Incapacitated;
 
-            if (technique == null)
+            var skill = loadout.GetSkill(slot);
+            if (skill == null)
                 return CastResult.NotLearned;
 
-            if (GetCooldownRemaining(technique.Id) > 0f)
+            if (!loadout.IsUnlocked(slot, caster.CurrentRealm))
+                return CastResult.NotUnlocked;
+
+            if (!SkillExecutionTypeExtensions.TryParse(skill.Type, out var execType))
+                return CastResult.NotSupported;
+
+            bool supported = execType switch
+            {
+                SkillExecutionType.Projectile => true,
+                SkillExecutionType.Zone => true,
+                SkillExecutionType.Dash => skill.DashDistance > 0f || skill.Teleport,
+                _ => false // melee_arc / ground_aoe / self_buff / channel: chưa thi triển
+            };
+            if (!supported)
+                return CastResult.NotSupported;
+
+            if (GetCooldownRemaining(skill.Id) > 0f)
                 return CastResult.OnCooldown;
 
-            if (!caster.ConsumeSpiritPower(technique.SPCost))
+            if (!caster.ConsumeSpiritPower(skill.SPCost))
                 return CastResult.NotEnoughSpiritPower;
 
-            Execute(technique, origin, target);
+            float masteryMultiplier = loadout.GetMasteryMultiplier(skill);
+            loadout.RecordUse(skill.Id);
 
-            if (technique.Cooldown > 0f)
+            Element element = skill.ElementFromCaster ? caster.SpiritRootElement : ElementExtensions.ParseElement(skill.Element);
+
+            if (execType == SkillExecutionType.Projectile)
             {
-                _cooldowns[technique.Id] = technique.Cooldown;
+                ExecuteProjectile(skill, origin, target, element, masteryMultiplier);
             }
 
-            Console.WriteLine($"[Pháp Thuật] ⚡ {caster.OwnerName} thi triển: {technique.Name} " +
-                              $"(Sát thương: {technique.Damage}, Linh lực: {technique.SPCost})");
+            if (skill.Cooldown > 0f)
+            {
+                _cooldowns[skill.Id] = skill.Cooldown;
+            }
+
+            outcome = new SkillCastOutcome
+            {
+                EffectiveDamage = skill.Damage * masteryMultiplier,
+                EffectiveDamagePerTick = skill.DamagePerTick * masteryMultiplier
+            };
+
+            Console.WriteLine($"[Chiêu Thức] ⚡ {caster.OwnerName} thi triển: {skill.Name} " +
+                              $"(Sát thương: {outcome.EffectiveDamage:F0}, Linh lực: {skill.SPCost})");
             return CastResult.Success;
         }
 
         /// <summary>
         /// Phóng chiêu theo pattern: "fan" (quạt đều), "barrage" (chuỗi liên tiếp lệch ngẫu nhiên), "nova" (tỏa tròn).
         /// </summary>
-        private void Execute(TechniqueData technique, Vector2 origin, Vector2 target)
+        private void ExecuteProjectile(SkillData skill, Vector2 origin, Vector2 target, Element element, float damageMultiplier)
         {
-            Element element = ElementExtensions.ParseElement(technique.Element);
-            var effects = technique.OnHitEffects;
+            var effects = skill.OnHitEffects;
+            float damage = skill.Damage * damageMultiplier;
 
             Vector2 dir = target - origin;
             if (dir == Vector2.Zero) dir = new Vector2(1, 0);
             else dir.Normalize();
 
             float baseAngle = (float)Math.Atan2(dir.Y, dir.X);
-            int count = Math.Max(1, technique.Count);
+            int count = Math.Max(1, skill.Count);
 
-            switch (technique.Pattern)
+            switch (skill.Pattern)
             {
                 case "nova":
                 {
                     float step = (float)(Math.PI * 2 / count);
                     for (int i = 0; i < count; i++)
                     {
-                        Spawn(origin, CombatMath.AngleToVector(step * i), technique, element, effects);
+                        Spawn(origin, CombatMath.AngleToVector(step * i), skill, element, damage, effects);
                     }
                     break;
                 }
@@ -114,9 +176,9 @@ namespace SandboxTuTien.Systems
                 {
                     for (int i = 0; i < count; i++)
                     {
-                        float angle = baseAngle + (float)(_random.NextDouble() - 0.5) * technique.Spread;
+                        float angle = baseAngle + (float)(_random.NextDouble() - 0.5) * skill.Spread;
                         Vector2 bulletDir = CombatMath.AngleToVector(angle);
-                        Spawn(origin + bulletDir * (i * technique.Spacing), bulletDir, technique, element, effects);
+                        Spawn(origin + bulletDir * (i * skill.Spacing), bulletDir, skill, element, damage, effects);
                     }
                     break;
                 }
@@ -125,24 +187,25 @@ namespace SandboxTuTien.Systems
                 {
                     if (count == 1)
                     {
-                        Spawn(origin, dir, technique, element, effects);
+                        Spawn(origin, dir, skill, element, damage, effects);
                         break;
                     }
 
-                    float step = technique.Spread / (count - 1);
-                    float startAngle = baseAngle - technique.Spread / 2f;
+                    float step = skill.Spread / (count - 1);
+                    float startAngle = baseAngle - skill.Spread / 2f;
                     for (int i = 0; i < count; i++)
                     {
-                        Spawn(origin, CombatMath.AngleToVector(startAngle + step * i), technique, element, effects);
+                        Spawn(origin, CombatMath.AngleToVector(startAngle + step * i), skill, element, damage, effects);
                     }
                     break;
                 }
             }
         }
 
-        private void Spawn(Vector2 position, Vector2 direction, TechniqueData technique, Element element, IReadOnlyList<OnHitEffect> effects)
+        private void Spawn(Vector2 position, Vector2 direction, SkillData skill, Element element, float damage,
+                           IReadOnlyList<OnHitEffect> effects)
         {
-            _projectilePool.Spawn(position, direction, technique.Damage, technique.Range, technique.Speed, element,
+            _projectilePool.Spawn(position, direction, damage, skill.Range, skill.Speed, element,
                                   isSilent: false, onHitEffects: effects, owner: ProjectileOwner.Player);
         }
     }

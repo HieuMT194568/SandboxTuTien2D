@@ -48,6 +48,12 @@ namespace SandboxTuTien.Systems
         /// <summary>Hệ số chí mạng của người chơi.</summary>
         public float PlayerCritMultiplier { get; set; } = DamageCalculator.DEFAULT_CRIT_MULTIPLIER;
 
+        /// <summary>Hệ số nhân sát thương chung cho đòn của người chơi (VD: Kiếm Ý — cộng dồn theo combo).</summary>
+        public float PlayerDamageMultiplier { get; set; } = 1f;
+
+        /// <summary>Biên bản đồ dùng để giới hạn hiệu ứng đẩy lùi trong phạm vi bản đồ (Game1.MAP_WIDTH/HEIGHT dùng chung giá trị này).</summary>
+        public const float MAP_BOUND = 2000f;
+
         public CombatSystem(List<Monster> monsters, ProjectilePool projectilePool, EventManager eventManager)
         {
             _monsters = monsters ?? throw new ArgumentNullException(nameof(monsters));
@@ -140,6 +146,8 @@ namespace SandboxTuTien.Systems
                 PlayerCritMultiplier, _random,
                 out bool isCounter, out bool isCrit);
 
+            if (fromPlayer) damage *= PlayerDamageMultiplier;
+
             if (onHitEffects != null) ApplyEffects(target, onHitEffects);
             if (fromPlayer) ApplyEffects(target, PlayerBonusOnHit);
 
@@ -153,10 +161,26 @@ namespace SandboxTuTien.Systems
                 Amount = damage,
                 Element = element,
                 IsCounter = isCounter,
-                IsCrit = isCrit
+                IsCrit = isCrit,
+                Owner = owner
             });
 
             return new HitResult(damage, isCounter, isCrit, killed);
+        }
+
+        /// <summary>Đẩy lùi mục tiêu theo hướng từ source ra xa, giới hạn trong biên bản đồ.</summary>
+        public void ApplyKnockback(Monster target, Vector2 source, float force)
+        {
+            if (force <= 0f) return;
+
+            Vector2 dir = target.Position - source;
+            if (dir == Vector2.Zero) dir = new Vector2(1f, 0f);
+            else dir.Normalize();
+
+            Vector2 pushed = target.Position + dir * force;
+            target.Position = new Vector2(
+                Math.Clamp(pushed.X, 16f, MAP_BOUND - 16f),
+                Math.Clamp(pushed.Y, 16f, MAP_BOUND - 16f));
         }
 
         /// <summary>Áp danh sách hiệu ứng lên mục tiêu (tung xúc xắc theo Chance).</summary>
