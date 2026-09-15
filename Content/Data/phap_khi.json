@@ -1,0 +1,43 @@
+[
+  {
+    "item_id": "phi_kiem_thanh_phong",
+    "name": "Thanh Phong Phi Kiếm",
+    "type": "MAGIC_WEAPON",
+    "element": "Wood",
+    "tier_required": 0,
+    "combat_stats": {
+      "base_damage": 150,
+      "range": 30,
+      "projectile_count": 3,
+      "silent_attack": true
+    },
+    "effects": [
+      { "type": "APPLY_DEBUFF", "status": "POISON", "value": 10, "duration": 5 }
+    ],
+    "crafting_recipe": [
+      { "item_id": "han_thiet", "quantity": 1 },
+      { "item_id": "hoa_tinh_thach", "quantity": 1 }
+    ]
+  },
+  {
+    "item_id": "kiem_hap_xich_diem",
+    "name": "Xích Diễm Kiếm Hạp",
+    "type": "MAGIC_WEAPON",
+    "element": "Fire",
+    "tier_required": 1,
+    "combat_stats": {
+      "base_damage": 80,
+      "range": 50,
+      "projectile_count": 16,
+      "silent_attack": false
+    },
+    "effects": [
+      { "type": "APPLY_DEBUFF", "status": "BURN", "value": 5, "duration": 8 }
+    ],
+    "crafting_recipe": [
+      { "item_id": "han_thiet", "quantity": 3 },
+      { "item_id": "hoa_tinh_thach", "quantity": 5 },
+      { "item_id": "linh_moc_tam", "quantity": 2 }
+    ]
+  }
+]

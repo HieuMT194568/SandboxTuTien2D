@@ -1,77 +1,55 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Xna.Framework;
 using SandboxTuTien.Core;
+using SandboxTuTien.Core.Combat;
+using SandboxTuTien.Data.Models;
 
 namespace SandboxTuTien.Components
 {
-    /// <summary>
-    /// Định nghĩa chi tiết của một Hồn Kỹ học được từ Hồn Hoàn.
-    /// </summary>
-    public class SoulSkill
-    {
-        public string Name { get; set; } = string.Empty;
-        public SandboxTuTien.Core.Combat.Element Element { get; set; }
-        public int RingNumber { get; set; } // Hồn hoàn thứ mấy (1 hoặc 2)
-        public float SPCost { get; set; }  // Hồn lực tiêu hao (mana)
-        public float Damage { get; set; }  // Sát thương cơ bản
-
-        public SoulSkill(string name, SandboxTuTien.Core.Combat.Element element, int ringNumber, float spCost, float damage)
-        {
-            Name = name;
-            Element = element;
-            RingNumber = ringNumber;
-            SPCost = spCost;
-            Damage = damage;
-        }
-    }
     // ========================================================================
     // ENUMS
     // ========================================================================
 
     /// <summary>
     /// Trạng thái FSM của nhân vật trong hệ thống tu luyện.
-    /// Theo CONTEXT: [IDLE, MEDITATING, HUNTING_RING, ABSORBING_RING, DEAD]
-    /// Bổ sung BREAKTHROUGH_READY làm trạng thái chờ khi chạm bình cảnh.
     /// </summary>
     public enum CultivationState
     {
         /// <summary>Nhàn rỗi — không tu luyện.</summary>
         Idle,
 
-        /// <summary>Minh Tưởng — đang tu luyện tích lũy Hồn Lực.</summary>
+        /// <summary>Đả Tọa — dẫn linh khí nhập thể, tích lũy tu vi.</summary>
         Meditating,
 
-        /// <summary>Đã chạm bình cảnh — EXP bị khóa, cần săn Hồn Thú.</summary>
+        /// <summary>Chạm bình cảnh — tu vi bị khóa, cần đột phá.</summary>
         BreakthroughReady,
 
-        /// <summary>Đang săn Hồn Thú để lấy Hồn Hoàn.</summary>
-        HuntingRing,
+        /// <summary>Đang đột phá — xung quan (dưới Kim Đan) hoặc độ Thiên Kiếp (từ Kim Đan).</summary>
+        Breakthrough,
 
-        /// <summary>Đang hấp thu Hồn Hoàn — rủi ro bạo thể.</summary>
-        AbsorbingRing,
-
-        /// <summary>Tử vong — cơ thể bạo liệt hoặc HP về 0.</summary>
+        /// <summary>Tử vong — HP về 0 do Yêu Thú tấn công.</summary>
         Dead
     }
 
     /// <summary>
-    /// Cảnh giới (danh hiệu) theo hệ thống Đấu La Đại Lục.
-    /// Mỗi cảnh giới tương ứng 10 cấp Hồn Lực.
-    /// Hồn Sĩ(1-10) → ... → Thần(100).
+    /// Đại cảnh giới tu tiên. Mỗi cảnh giới gồm 10 tầng tu vi.
+    /// Luyện Khí(1-10) → ... → Chân Tiên(91-99) → Tiên Đế(100).
     /// </summary>
     public enum CultivationRealm
     {
-        HonSi,          // Hồn Sĩ: Cấp 1-10
-        HonSu,          // Hồn Sư: Cấp 11-20
-        DaiHonSu,       // Đại Hồn Sư: Cấp 21-30
-        HonTon,         // Hồn Tôn: Cấp 31-40
-        HonTong,        // Hồn Tông: Cấp 41-50
-        HonVuong,       // Hồn Vương: Cấp 51-60
-        HonDe,          // Hồn Đế: Cấp 61-70
-        HonThanh,       // Hồn Thánh: Cấp 71-80
-        HonDauLa,       // Hồn Đấu La: Cấp 81-90
-        PhongHaoDauLa,  // Phong Hào Đấu La: Cấp 91-99
-        Than            // Thần: Cấp 100
+        LuyenKhi,   // Luyện Khí: Tầng 1-10
+        TrucCo,     // Trúc Cơ: 11-20
+        KimDan,     // Kim Đan: 21-30
+        NguyenAnh,  // Nguyên Anh: 31-40
+        HoaThan,    // Hóa Thần: 41-50
+        LuyenHu,    // Luyện Hư: 51-60
+        HopThe,     // Hợp Thể: 61-70
+        DaiThua,    // Đại Thừa: 71-80
+        DoKiep,     // Độ Kiếp: 81-90
+        ChanTien,   // Chân Tiên: 91-99
+        TienDe      // Tiên Đế: 100
     }
 
     // ========================================================================
@@ -80,8 +58,8 @@ namespace SandboxTuTien.Components
 
     /// <summary>
     /// Component chính quản lý toàn bộ logic tu luyện của một nhân vật.
-    /// Bao gồm: tích lũy EXP, tăng cấp, chạm bình cảnh, hấp thu Hồn Hoàn,
-    /// và xử lý rủi ro bạo thể.
+    /// Bao gồm: tích lũy tu vi, tăng tầng, chạm bình cảnh, đột phá (xung quan / Thiên Kiếp),
+    /// Linh Căn, Đan Dược trợ lực và Tâm Ma.
     ///
     /// Thiết kế theo Component-Based Architecture:
     /// - Không chứa logic render/input.
@@ -94,20 +72,38 @@ namespace SandboxTuTien.Components
         // CONSTANTS
         // ====================================================================
 
-        /// <summary>Cấp Hồn Lực tối đa.</summary>
+        /// <summary>Tầng tu vi tối đa.</summary>
         private const int MAX_LEVEL = 100;
 
-        /// <summary>Tốc độ tu luyện cơ bản (EXP/giây game) khi Minh Tưởng.</summary>
+        /// <summary>Tốc độ tu luyện cơ bản (tu vi/giây) khi Đả Tọa.</summary>
         private const float BASE_MEDITATION_RATE = 5.0f;
 
-        /// <summary>EXP cơ bản cần để lên cấp (sẽ scale theo level).</summary>
+        /// <summary>Tu vi cơ bản cần để lên tầng (sẽ scale theo tầng).</summary>
         private const float BASE_EXP_PER_LEVEL = 100.0f;
 
-        /// <summary>Số đợt internal damage khi hấp thu Hồn Hoàn.</summary>
-        private const int ABSORPTION_DAMAGE_WAVES = 5;
+        /// <summary>Từ bình cảnh tầng này trở lên phải độ Thiên Kiếp (Kim Đan viên mãn → Nguyên Anh).</summary>
+        private const int HEAVENLY_TRIBULATION_LEVEL = 30;
 
-        /// <summary>Thời gian hấp thu Hồn Hoàn (giây thực).</summary>
-        private const float ABSORPTION_DURATION = 3.0f;
+        /// <summary>Số đợt phản phệ khi xung quan (bình cảnh dưới Kim Đan).</summary>
+        private const int INNER_WAVES = 5;
+
+        /// <summary>Khoảng cách giữa các đợt phản phệ (giây thực).</summary>
+        private const float INNER_WAVE_INTERVAL = 0.6f;
+
+        /// <summary>Khoảng cách giữa các đợt lôi kiếp (giây thực).</summary>
+        private const float LIGHTNING_WAVE_INTERVAL = 1.2f;
+
+        /// <summary>Thời gian từ lúc báo hiệu tới lúc sét đánh xuống (Game1 dùng chung hằng số này).</summary>
+        public const float LIGHTNING_STRIKE_DELAY = 0.8f;
+
+        /// <summary>Trợ lực tối đa từ Đan Dược.</summary>
+        private const float MAX_PILL_BUFF = 0.5f;
+
+        /// <summary>Tâm Ma tối đa.</summary>
+        private const float MAX_HEART_DEMON = 0.5f;
+
+        /// <summary>Tâm Ma tăng thêm sau mỗi lần đột phá thất bại.</summary>
+        private const float HEART_DEMON_PER_FAILURE = 0.1f;
 
         // ====================================================================
         // PROPERTIES — Trạng thái tu luyện
@@ -116,30 +112,32 @@ namespace SandboxTuTien.Components
         /// <summary>Tên chủ sở hữu (để log).</summary>
         public string OwnerName { get; set; } = "Unknown";
 
-        /// <summary>Cấp Hồn Lực hiện tại (1-100).</summary>
+        /// <summary>Tầng tu vi hiện tại (1-100).</summary>
         public int CurrentLevel { get; private set; }
 
-        /// <summary>EXP tích lũy trong cấp hiện tại.</summary>
+        /// <summary>Tu vi tích lũy trong tầng hiện tại.</summary>
         public float CurrentExp { get; private set; }
 
-        /// <summary>EXP cần để lên cấp tiếp theo.</summary>
+        /// <summary>Tu vi cần để lên tầng tiếp theo.</summary>
         public float MaxExpForCurrentLevel => CalculateExpRequired(CurrentLevel);
 
         /// <summary>
-        /// Hệ số Tiên Thiên Hồn Lực (0.0 → 2.0).
-        /// 0.0 = Phế Vũ Hồn, 1.0 = Thường, 2.0 = Tiên Thiên Mãn Hồn Lực.
-        /// Nhân trực tiếp với tốc độ tu luyện.
+        /// Phẩm chất Linh Căn (0.0 → 2.0), nhân trực tiếp với tốc độ tu luyện.
+        /// 0.0 = Phế Linh Căn, 1.0 = Tạp/Chân Linh Căn, 2.0 = Thiên Linh Căn.
         /// </summary>
-        public float InnateMultiplier { get; set; }
+        public float SpiritRootMultiplier { get; set; }
+
+        /// <summary>Hệ của Linh Căn — quyết định Pháp Thuật lĩnh ngộ khi đột phá.</summary>
+        public Element SpiritRootElement { get; set; }
 
         /// <summary>Trạng thái FSM hiện tại.</summary>
         public CultivationState CurrentState { get; private set; }
 
-        /// <summary>Cảnh giới (danh hiệu) hiện tại.</summary>
+        /// <summary>Đại cảnh giới hiện tại.</summary>
         public CultivationRealm CurrentRealm { get; private set; }
 
-        /// <summary>Số Hồn Hoàn đã hấp thu (tối đa 9 cho thường, ít hơn cho Song Sinh Vũ Hồn).</summary>
-        public int SoulRingsCount { get; private set; }
+        /// <summary>Số lần đã đột phá bình cảnh thành công.</summary>
+        public int BreakthroughCount { get; private set; }
 
         // ====================================================================
         // PROPERTIES — Chỉ số sinh tồn
@@ -148,38 +146,52 @@ namespace SandboxTuTien.Components
         /// <summary>HP hiện tại.</summary>
         public float HP { get; private set; }
 
-        /// <summary>HP tối đa (scale theo level).</summary>
+        /// <summary>HP tối đa (scale theo tầng).</summary>
         public float MaxHP { get; private set; }
 
-        /// <summary>Hồn Lực năng lượng hiện tại.</summary>
-        public float SoulPower { get; private set; }
+        /// <summary>Linh Lực hiện tại.</summary>
+        public float SpiritPower { get; private set; }
 
-        /// <summary>Hồn Lực năng lượng tối đa.</summary>
-        public float MaxSoulPower { get; private set; }
+        /// <summary>Linh Lực tối đa.</summary>
+        public float MaxSpiritPower { get; private set; }
 
-        /// <summary>
-        /// Cực hạn chịu đựng cơ thể — số năm tu vi Hồn Thú tối đa
-        /// mà cơ thể có thể hấp thu an toàn. Scale theo cảnh giới.
-        /// </summary>
-        public float BodyLimit { get; private set; }
+        /// <summary>Trợ lực đột phá từ Đan Dược đã dùng (0 → 0.5). Tiêu hết sau mỗi lần đột phá.</summary>
+        public float PillBuff { get; private set; }
 
-        /// <summary>Buff ý chí (Willpower) — tăng tỷ lệ hấp thu thành công.</summary>
-        public float WillpowerBuff { get; set; }
+        /// <summary>Tâm Ma (0 → 0.5) — trừ vào tỷ lệ đột phá, tăng khi thất bại, tiêu tan khi thành công.</summary>
+        public float HeartDemon { get; private set; }
 
-        /// <summary>Hồn Kỹ chủ động thứ nhất (phím Q) học được từ Hồn Hoàn 1.</summary>
-        public SoulSkill? Skill1 { get; private set; }
+        /// <summary>Pháp Thuật chủ động thứ nhất (phím Q), lĩnh ngộ sau lần đột phá đầu.</summary>
+        public TechniqueData? Skill1 { get; private set; }
 
-        /// <summary>Hồn Kỹ chủ động thứ hai (phím W) học được từ Hồn Hoàn 2.</summary>
-        public SoulSkill? Skill2 { get; private set; }
+        /// <summary>Pháp Thuật chủ động thứ hai (phím E), lĩnh ngộ sau lần đột phá thứ hai.</summary>
+        public TechniqueData? Skill2 { get; private set; }
 
-        /// <summary>Cờ đánh dấu người chơi sở hữu Ngoại Phụ Hồn Cốt Bát Chu Mâu.</summary>
-        public bool HasBatChuMau { get; private set; }
+        /// <summary>Cờ đánh dấu người chơi sở hữu thể chất đặc biệt Vạn Độc Thể.</summary>
+        public bool HasVanDocThe { get; private set; }
 
-        /// <summary>Số lần ấn Spacebar QTE trong quá trình hấp thu.</summary>
+        /// <summary>Số lần ấn Spacebar "Ổn định đạo tâm" trong quá trình đột phá.</summary>
         public int QTEPressCount { get; set; }
 
-        /// <summary>Bộ đếm thời gian hồi phục HP theo thời gian (Heal over Time).</summary>
-        public float HoTTimer { get; set; }
+        /// <summary>Thời gian còn lại của hiệu ứng hồi HP theo thời gian.</summary>
+        public float HoTTimer { get; private set; }
+
+        /// <summary>Tỷ lệ HP tối đa hồi mỗi giây khi có HoT.</summary>
+        private float _hotPercentPerSecond;
+
+        /// <summary>True nếu lần đột phá hiện tại là Thiên Kiếp (lôi kiếp có thể né).</summary>
+        public bool IsHeavenlyTribulation { get; private set; }
+
+        /// <summary>Đợt phản phệ/lôi kiếp hiện tại (cho HUD).</summary>
+        public int TribulationWave => _currentWave;
+
+        /// <summary>Tổng số đợt của lần đột phá hiện tại (cho HUD).</summary>
+        public int TribulationTotalWaves => _totalWaves;
+
+        /// <summary>Có thể nhận thêm tu vi không (không chết, không đang bình cảnh/đột phá).</summary>
+        public bool CanGainExp => CurrentState != CultivationState.Dead &&
+                                  CurrentState != CultivationState.BreakthroughReady &&
+                                  CurrentState != CultivationState.Breakthrough;
 
         /// <summary>Hồi HP (không vượt quá MaxHP) hoặc trừ HP nếu truyền số âm.</summary>
         public void Heal(float amount)
@@ -197,55 +209,68 @@ namespace SandboxTuTien.Components
                 {
                     HP = 0;
                     CurrentState = CultivationState.Dead;
-                    Console.WriteLine($"[TỬ VONG] ☠ {OwnerName} đã kiệt sức tử vong!");
+                    Console.WriteLine($"[TỬ VONG] ☠ {OwnerName} đã thân tử đạo tiêu!");
                     _eventManager.Publish(new OnPlayerDiedEvent
                     {
                         PlayerName = OwnerName,
-                        CauseOfDeath = "Bị Hồn Thú tấn công chí mạng"
+                        CauseOfDeath = "Bị Yêu Thú tấn công chí mạng"
                     });
                 }
             }
         }
 
-        /// <summary>Hồi Hồn Lực năng lượng (không vượt quá MaxSoulPower).</summary>
-        public void RecoverSoulPower(float amount)
+        /// <summary>Kích hoạt hồi HP theo thời gian (Hồi Xuân Đan).</summary>
+        public void ApplyHealOverTime(float percentPerSecond, float duration)
         {
             if (CurrentState == CultivationState.Dead) return;
-            SoulPower = Math.Clamp(SoulPower + amount, 0f, MaxSoulPower);
-            Console.WriteLine($"[Hồi Hồn Lực] {OwnerName} được hồi {amount:F0} Hồn Lực → Hồn Lực: {SoulPower:F0}/{MaxSoulPower:F0}");
+            _hotPercentPerSecond = percentPerSecond;
+            HoTTimer = duration;
         }
 
-        /// <summary>Tiêu hao Hồn Lực năng lượng.</summary>
-        public bool ConsumeSoulPower(float amount)
+        /// <summary>Hồi Linh Lực (không vượt quá MaxSpiritPower).</summary>
+        public void RecoverSpiritPower(float amount)
         {
-            if (CurrentState == CultivationState.Dead || SoulPower < amount) return false;
-            SoulPower -= amount;
+            if (CurrentState == CultivationState.Dead) return;
+            SpiritPower = Math.Clamp(SpiritPower + amount, 0f, MaxSpiritPower);
+            Console.WriteLine($"[Hồi Linh Lực] {OwnerName} được hồi {amount:F0} Linh Lực → {SpiritPower:F0}/{MaxSpiritPower:F0}");
+        }
+
+        /// <summary>Tiêu hao Linh Lực.</summary>
+        public bool ConsumeSpiritPower(float amount)
+        {
+            if (CurrentState == CultivationState.Dead || SpiritPower < amount) return false;
+            SpiritPower -= amount;
             return true;
         }
 
+        /// <summary>Cộng trợ lực đột phá từ Đan Dược (tối đa MAX_PILL_BUFF).</summary>
+        public void AddPillBuff(float amount)
+        {
+            if (CurrentState == CultivationState.Dead) return;
+            PillBuff = Math.Min(MAX_PILL_BUFF, PillBuff + amount);
+            Console.WriteLine($"[Đan Dược] {OwnerName} luyện hóa dược lực → Trợ lực đột phá: +{PillBuff:P0}");
+        }
+
         // ====================================================================
-        // INTERNAL STATE — Hấp thu Hồn Hoàn
+        // INTERNAL STATE — Đột phá
         // ====================================================================
 
-        /// <summary>Tuổi Hồn Thú đang hấp thu (năm tu vi).</summary>
-        private int _absorbingSoulBeastAge;
+        /// <summary>Thời gian đã trôi qua trong quá trình đột phá.</summary>
+        private float _elapsed;
 
-        /// <summary>Tuổi Hồn Thú đang hấp thu (năm tu vi) công khai cho HUD.</summary>
-        public int AbsorbingSoulBeastAge => _absorbingSoulBeastAge;
+        /// <summary>Thời điểm (theo _elapsed) của đợt gần nhất.</summary>
+        private float _lastWaveTime;
 
-        /// <summary>Hệ thuộc tính của Hồn Thú đang hấp thu.</summary>
-        private SandboxTuTien.Core.Combat.Element _absorbingSoulBeastElement;
+        /// <summary>Đợt hiện tại.</summary>
+        private int _currentWave;
 
-        /// <summary>Thời gian đã trôi qua trong quá trình hấp thu.</summary>
-        private float _absorptionElapsed;
+        /// <summary>Tổng số đợt.</summary>
+        private int _totalWaves;
 
-        /// <summary>Đợt damage hiện tại trong quá trình hấp thu.</summary>
-        private int _currentDamageWave;
+        /// <summary>Thời gian giữa mỗi đợt.</summary>
+        private float _waveInterval;
 
-        /// <summary>Thời gian giữa mỗi đợt damage.</summary>
-        private float _timeBetweenWaves;
-
-        /// <summary>Bộ đếm thời gian cho wave tiếp theo.</summary>
+        /// <summary>Bộ đếm thời gian cho đợt tiếp theo.</summary>
         private float _waveTimer;
 
         // ====================================================================
@@ -253,6 +278,9 @@ namespace SandboxTuTien.Components
         // ====================================================================
 
         private readonly EventManager _eventManager;
+
+        /// <summary>Danh sách Pháp Thuật (data-driven) để lĩnh ngộ theo Linh Căn.</summary>
+        private readonly IReadOnlyList<TechniqueData> _techniques;
 
         /// <summary>Random generator cho các tính toán xác suất.</summary>
         private readonly Random _random = new();
@@ -273,30 +301,32 @@ namespace SandboxTuTien.Components
         /// Khởi tạo CultivationComponent.
         /// </summary>
         /// <param name="eventManager">EventBus để publish sự kiện.</param>
-        /// <param name="innateLevel">Cấp Tiên Thiên Hồn Lực ban đầu (0-10).</param>
-        /// <param name="innateMultiplier">Hệ số tu luyện (0.0-2.0).</param>
-        public CultivationComponent(EventManager eventManager, int innateLevel, float innateMultiplier)
+        /// <param name="techniques">Danh sách Pháp Thuật nạp từ techniques.json.</param>
+        /// <param name="innateLevel">Tầng tu vi ban đầu (0-10).</param>
+        /// <param name="spiritRootMultiplier">Phẩm chất Linh Căn (0.0-2.0).</param>
+        /// <param name="spiritRootElement">Hệ Linh Căn.</param>
+        public CultivationComponent(EventManager eventManager, IReadOnlyList<TechniqueData> techniques,
+                                    int innateLevel, float spiritRootMultiplier, Element spiritRootElement)
         {
             _eventManager = eventManager ?? throw new ArgumentNullException(nameof(eventManager));
+            _techniques = techniques ?? throw new ArgumentNullException(nameof(techniques));
 
             CurrentLevel = Math.Clamp(innateLevel, 0, 10);
-            InnateMultiplier = Math.Clamp(innateMultiplier, 0f, 2.0f);
-            CurrentState = CultivationState.Idle;
+            SpiritRootMultiplier = Math.Clamp(spiritRootMultiplier, 0f, 2.0f);
+            SpiritRootElement = spiritRootElement;
+            BreakthroughCount = 0;
+            // Khởi đầu đúng mốc bình cảnh (VD: tầng 10) thì phải đột phá trước
+            CurrentState = IsAtBottleneck() ? CultivationState.BreakthroughReady : CultivationState.Idle;
             CurrentRealm = GetRealmForLevel(CurrentLevel);
-            SoulRingsCount = 0;
-            WillpowerBuff = 0f;
 
-            // Khởi tạo HP theo level
             MaxHP = CalculateMaxHP(CurrentLevel);
             HP = MaxHP;
-            MaxSoulPower = CalculateMaxSoulPower(CurrentLevel);
-            SoulPower = MaxSoulPower;
-            BodyLimit = CalculateBodyLimit(SoulRingsCount);
+            MaxSpiritPower = CalculateMaxSpiritPower(CurrentLevel);
+            SpiritPower = MaxSpiritPower;
 
-            Console.WriteLine($"[Khởi Tạo] {OwnerName} — Tiên Thiên Hồn Lực: Cấp {CurrentLevel}, " +
-                              $"Hệ số: {InnateMultiplier:P0}, " +
-                              $"Cảnh giới: {GetRealmDisplayName(CurrentRealm)}, " +
-                              $"HP: {HP}/{MaxHP}, Hồn Lực: {SoulPower}/{MaxSoulPower}");
+            Console.WriteLine($"[Khởi Tạo] {OwnerName} — {GetSpiritRootName()}, " +
+                              $"Cảnh giới: {GetRealmDisplayName(CurrentRealm)} tầng {CurrentLevel}, " +
+                              $"HP: {HP}/{MaxHP}, Linh Lực: {SpiritPower}/{MaxSpiritPower}");
         }
 
         // ====================================================================
@@ -311,38 +341,24 @@ namespace SandboxTuTien.Components
         {
             float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
 
-            // Cập nhật hồi phục HP theo thời gian (HoT) từ Oscar Sausage
+            // Hồi phục HP theo thời gian (Hồi Xuân Đan)
             if (HoTTimer > 0)
             {
                 HoTTimer -= deltaTime;
-                Heal(MaxHP * 0.05f * deltaTime); // Hồi 5% HP tối đa mỗi giây
+                HP = Math.Clamp(HP + MaxHP * _hotPercentPerSecond * deltaTime, 0f, MaxHP);
             }
 
             switch (CurrentState)
             {
-                case CultivationState.Idle:
-                    // Không làm gì — chờ lệnh
-                    break;
-
                 case CultivationState.Meditating:
                     UpdateMeditating(deltaTime);
                     break;
 
-                case CultivationState.BreakthroughReady:
-                    // EXP bị khóa — chờ player đi săn Hồn Thú
+                case CultivationState.Breakthrough:
+                    UpdateBreakthrough(deltaTime);
                     break;
 
-                case CultivationState.HuntingRing:
-                    // Sẽ được xử lý bởi CombatSystem (chưa implement)
-                    break;
-
-                case CultivationState.AbsorbingRing:
-                    UpdateAbsorbingRing(deltaTime);
-                    break;
-
-                case CultivationState.Dead:
-                    // Không xử lý gì
-                    break;
+                // Idle / BreakthroughReady / Dead: chờ lệnh
             }
         }
 
@@ -350,123 +366,110 @@ namespace SandboxTuTien.Components
         // STATE TRANSITIONS — Chuyển trạng thái
         // ====================================================================
 
-        /// <summary>Bắt đầu Minh Tưởng (tu luyện).</summary>
+        /// <summary>Bắt đầu Đả Tọa (tu luyện).</summary>
         public void StartMeditating()
         {
             if (CurrentState == CultivationState.Dead)
             {
-                Console.WriteLine($"[Tu Luyện] {OwnerName} đã chết, không thể tu luyện!");
+                Console.WriteLine($"[Tu Luyện] {OwnerName} đã tử vong, không thể tu luyện!");
                 return;
             }
 
             if (CurrentState == CultivationState.BreakthroughReady)
             {
-                Console.WriteLine($"[Tu Luyện] {OwnerName} đã chạm bình cảnh! " +
-                                  "Cần Hồn Hoàn để đột phá, không thể Minh Tưởng tiếp.");
+                Console.WriteLine($"[Tu Luyện] {OwnerName} đã chạm bình cảnh! Phải đột phá mới tu luyện tiếp được.");
                 return;
             }
 
-            if (CurrentState == CultivationState.AbsorbingRing)
+            if (CurrentState == CultivationState.Breakthrough)
             {
-                Console.WriteLine($"[Tu Luyện] {OwnerName} đang hấp thu Hồn Hoàn, không thể chuyển trạng thái!");
+                Console.WriteLine($"[Tu Luyện] {OwnerName} đang đột phá, không thể phân tâm!");
                 return;
             }
 
-            if (InnateMultiplier <= 0f)
+            if (SpiritRootMultiplier <= 0f)
             {
-                Console.WriteLine($"[Tu Luyện] {OwnerName} là Phế Vũ Hồn — " +
-                                  "không có Hồn Lực, không thể trở thành Hồn Sư!");
+                Console.WriteLine($"[Tu Luyện] {OwnerName} là Phế Linh Căn — không thể dẫn khí nhập thể!");
                 return;
             }
 
             CurrentState = CultivationState.Meditating;
-            Console.WriteLine($"[Tu Luyện] ★ {OwnerName} bắt đầu Minh Tưởng... " +
-                              $"Hồn Lực hiện tại: Cấp {CurrentLevel} " +
-                              $"({CurrentExp:F0}/{MaxExpForCurrentLevel:F0} EXP)");
+            Console.WriteLine($"[Tu Luyện] ★ {OwnerName} bắt đầu Đả Tọa... " +
+                              $"Tầng {CurrentLevel} ({CurrentExp:F0}/{MaxExpForCurrentLevel:F0} tu vi)");
         }
 
-        /// <summary>Dừng Minh Tưởng, về trạng thái Idle.</summary>
+        /// <summary>Dừng Đả Tọa, về trạng thái Idle.</summary>
         public void StopMeditating()
         {
             if (CurrentState == CultivationState.Meditating)
             {
                 CurrentState = CultivationState.Idle;
-                Console.WriteLine($"[Tu Luyện] {OwnerName} ngừng Minh Tưởng. " +
-                                  $"EXP: {CurrentExp:F0}/{MaxExpForCurrentLevel:F0}");
+                Console.WriteLine($"[Tu Luyện] {OwnerName} thu công. Tu vi: {CurrentExp:F0}/{MaxExpForCurrentLevel:F0}");
             }
         }
 
         /// <summary>
-        /// Bắt đầu hấp thu Hồn Hoàn. Chuyển FSM sang ABSORBING_RING.
-        /// Chỉ có thể gọi khi đang ở trạng thái BREAKTHROUGH_READY.
+        /// Bắt đầu đột phá bình cảnh. Chỉ gọi được khi đang ở BreakthroughReady.
+        /// Dưới Kim Đan: xung quan (phản phệ nội tại). Từ Kim Đan: độ Thiên Kiếp (lôi kiếp có thể né).
         /// </summary>
-        /// <param name="soulBeastAge">Tuổi Hồn Thú (năm tu vi) — quyết định rủi ro.</param>
-        public void StartAbsorbingSoulRing(int soulBeastAge, SandboxTuTien.Core.Combat.Element element)
+        public bool StartBreakthrough()
         {
-            if (CurrentState != CultivationState.BreakthroughReady &&
-                CurrentState != CultivationState.Idle)
+            if (CurrentState != CultivationState.BreakthroughReady)
             {
-                Console.WriteLine($"[Hồn Hoàn] {OwnerName} chưa sẵn sàng hấp thu! " +
-                                  $"Trạng thái hiện tại: {CurrentState}");
-                return;
+                Console.WriteLine($"[Đột Phá] {OwnerName} chưa chạm bình cảnh! Trạng thái hiện tại: {CurrentState}");
+                return false;
             }
 
-            if (soulBeastAge <= 0)
-            {
-                Console.WriteLine($"[Hồn Hoàn] Tuổi Hồn Thú không hợp lệ: {soulBeastAge}");
-                return;
-            }
-
-            _absorbingSoulBeastAge = soulBeastAge;
-            _absorbingSoulBeastElement = element;
-            _absorptionElapsed = 0f;
-            _currentDamageWave = 0;
-            _timeBetweenWaves = ABSORPTION_DURATION / ABSORPTION_DAMAGE_WAVES;
+            IsHeavenlyTribulation = CurrentLevel >= HEAVENLY_TRIBULATION_LEVEL;
+            _totalWaves = IsHeavenlyTribulation ? 2 + CurrentLevel / 10 : INNER_WAVES;
+            _waveInterval = IsHeavenlyTribulation ? LIGHTNING_WAVE_INTERVAL : INNER_WAVE_INTERVAL;
+            _currentWave = 0;
             _waveTimer = 0f;
-            QTEPressCount = 0; // Reset số lần nhấn QTE
+            _elapsed = 0f;
+            _lastWaveTime = 0f;
+            QTEPressCount = 0;
 
-            CurrentState = CultivationState.AbsorbingRing;
+            CurrentState = CultivationState.Breakthrough;
 
-            float successRate = CalculateAbsorptionSuccessRate(soulBeastAge);
-
-            Console.WriteLine($"[Hồn Hoàn] ⚡ {OwnerName} bắt đầu hấp thu Hồn Hoàn!");
-            Console.WriteLine($"           Hồn Thú: {soulBeastAge} năm tu vi (Hệ: {element})");
-            Console.WriteLine($"           Cực hạn cơ thể: {BodyLimit:F0} năm");
-            Console.WriteLine($"           Tỷ lệ thành công: {successRate:P1}");
-            Console.WriteLine($"           Sẽ chịu {ABSORPTION_DAMAGE_WAVES} đợt sát thương nội tại...");
+            Console.WriteLine(IsHeavenlyTribulation
+                ? $"[Thiên Kiếp] ⚡ {OwnerName} dẫn động Thiên Kiếp! {_totalWaves} đợt lôi kiếp sắp giáng xuống!"
+                : $"[Xung Quan] ⚡ {OwnerName} bắt đầu xung kích bình cảnh tầng {CurrentLevel}!");
+            Console.WriteLine($"           Tỷ lệ thành công: {CalculateBreakthroughSuccessRate():P1} " +
+                              $"(Đan dược +{PillBuff:P0}, Tâm Ma -{HeartDemon:P0})");
+            return true;
         }
 
-        /// <summary>Thêm EXP trực tiếp (dùng cho debug/test).</summary>
-        public void AddExp(float amount)
+        /// <summary>Nhận sát thương từ một tia lôi kiếp đánh trúng (do Game1 gọi).</summary>
+        public void TakeTribulationDamage(float damage)
         {
-            if (CurrentState == CultivationState.Dead)
-            {
-                Console.WriteLine($"[Tu Luyện] {OwnerName} đã chết!");
-                return;
-            }
+            if (CurrentState != CultivationState.Breakthrough) return;
+            ApplyBreakthroughDamage(damage, "Lôi kiếp giáng trúng thân");
+        }
 
-            if (CurrentState == CultivationState.BreakthroughReady)
+        /// <summary>Thêm tu vi trực tiếp (Yêu Đan hoặc debug). Trả về false nếu đang bị khóa.</summary>
+        public bool AddExp(float amount)
+        {
+            if (!CanGainExp)
             {
-                Console.WriteLine($"[Tu Luyện] {OwnerName} đã chạm bình cảnh! " +
-                                  "EXP bị khóa, cần Hồn Hoàn.");
-                return;
+                Console.WriteLine($"[Tu Luyện] {OwnerName} không thể hấp thu thêm tu vi lúc này ({CurrentState}).");
+                return false;
             }
 
             CurrentExp += amount;
-            Console.WriteLine($"[Debug] +{amount:F0} EXP → {OwnerName}: " +
-                              $"{CurrentExp:F0}/{MaxExpForCurrentLevel:F0}");
+            Console.WriteLine($"[Tu Vi] +{amount:F0} → {OwnerName}: {CurrentExp:F0}/{MaxExpForCurrentLevel:F0}");
 
             CheckLevelUp();
+            return true;
         }
 
         // ====================================================================
-        // PRIVATE — Logic Minh Tưởng
+        // PRIVATE — Logic Đả Tọa
         // ====================================================================
 
         private void UpdateMeditating(float deltaTime)
         {
-            // Tốc độ tăng EXP = Base × Hệ số Tiên Thiên × deltaTime
-            float expGain = BASE_MEDITATION_RATE * InnateMultiplier * deltaTime;
+            // Tốc độ tăng tu vi = Base × Linh Căn × deltaTime
+            float expGain = BASE_MEDITATION_RATE * SpiritRootMultiplier * deltaTime;
             CurrentExp += expGain;
 
             // Throttled logging
@@ -474,8 +477,8 @@ namespace SandboxTuTien.Components
             if (_logTimer >= LOG_INTERVAL)
             {
                 _logTimer = 0f;
-                Console.WriteLine($"[Minh Tưởng] {OwnerName} đang tu luyện... " +
-                                  $"Cấp {CurrentLevel} — EXP: {CurrentExp:F1}/{MaxExpForCurrentLevel:F0} " +
+                Console.WriteLine($"[Đả Tọa] {OwnerName} đang tu luyện... " +
+                                  $"Tầng {CurrentLevel} — Tu vi: {CurrentExp:F1}/{MaxExpForCurrentLevel:F0} " +
                                   $"(+{expGain / deltaTime:F1}/s)");
             }
 
@@ -486,20 +489,17 @@ namespace SandboxTuTien.Components
         {
             while (CurrentExp >= MaxExpForCurrentLevel && CurrentLevel < MAX_LEVEL)
             {
-                // Trừ EXP dư
                 CurrentExp -= MaxExpForCurrentLevel;
                 int oldLevel = CurrentLevel;
                 CurrentLevel++;
 
-                // Cập nhật HP và BodyLimit
                 MaxHP = CalculateMaxHP(CurrentLevel);
                 HP = MaxHP;
-                MaxSoulPower = CalculateMaxSoulPower(CurrentLevel);
-                SoulPower = MaxSoulPower;
+                MaxSpiritPower = CalculateMaxSpiritPower(CurrentLevel);
+                SpiritPower = MaxSpiritPower;
 
-                Console.WriteLine($"[TĂNG CẤP] ★★★ {OwnerName} Hồn Lực tăng lên Cấp {CurrentLevel}! ★★★");
+                Console.WriteLine($"[TĂNG TẦNG] ★★★ {OwnerName} tu vi tăng lên tầng {CurrentLevel}! ★★★");
 
-                // Publish event tăng cấp
                 _eventManager.Publish(new OnLevelUpEvent
                 {
                     PlayerName = OwnerName,
@@ -507,15 +507,13 @@ namespace SandboxTuTien.Components
                     NewLevel = CurrentLevel
                 });
 
-                // Kiểm tra thay đổi cảnh giới
                 var newRealm = GetRealmForLevel(CurrentLevel);
                 if (newRealm != CurrentRealm)
                 {
                     var oldRealm = CurrentRealm;
                     CurrentRealm = newRealm;
 
-                    Console.WriteLine($"[CẢNH GIỚI] ✦✦✦ {OwnerName} đột phá thành " +
-                                      $"{GetRealmDisplayName(newRealm)}! ✦✦✦");
+                    Console.WriteLine($"[CẢNH GIỚI] ✦✦✦ {OwnerName} bước vào {GetRealmDisplayName(newRealm)}! ✦✦✦");
 
                     _eventManager.Publish(new OnRealmChangedEvent
                     {
@@ -526,186 +524,208 @@ namespace SandboxTuTien.Components
                     });
                 }
 
-                // Kiểm tra bình cảnh (mỗi 10 cấp = cần Hồn Hoàn)
-                if (CurrentLevel % 10 == 0 && CurrentLevel < MAX_LEVEL)
+                if (IsAtBottleneck())
                 {
                     CurrentState = CultivationState.BreakthroughReady;
-                    CurrentExp = 0; // Khóa EXP
+                    CurrentExp = 0; // Khóa tu vi
+                    bool heavenly = CurrentLevel >= HEAVENLY_TRIBULATION_LEVEL;
 
-                    // Cập nhật Body Limit cho Hồn Hoàn tiếp theo
-                    BodyLimit = CalculateBodyLimit(SoulRingsCount);
-
-                    Console.WriteLine($"[BÌNH CẢNH] ⚠ {OwnerName} chạm bình cảnh tại Cấp {CurrentLevel}!");
-                    Console.WriteLine($"            Cần tiêu diệt Hồn Thú để nhận Hồn Hoàn thứ {SoulRingsCount + 1}.");
-                    Console.WriteLine($"            Cực hạn hấp thu: {BodyLimit:F0} năm tu vi.");
+                    Console.WriteLine($"[BÌNH CẢNH] ⚠ {OwnerName} chạm bình cảnh tại tầng {CurrentLevel}!");
+                    Console.WriteLine(heavenly
+                        ? "            Phải độ Thiên Kiếp để đột phá. Chuẩn bị Phá Cảnh Đan!"
+                        : "            Phải xung kích bình cảnh để đột phá.");
 
                     _eventManager.Publish(new OnBottleneckReachedEvent
                     {
                         PlayerName = OwnerName,
                         Level = CurrentLevel,
-                        CurrentRealm = GetRealmDisplayName(CurrentRealm)
+                        CurrentRealm = GetRealmDisplayName(CurrentRealm),
+                        IsHeavenlyTribulation = heavenly
                     });
 
-                    break; // Dừng tăng cấp tại bình cảnh
+                    break; // Dừng tăng tầng tại bình cảnh
                 }
             }
         }
 
         // ====================================================================
-        // PRIVATE — Logic Hấp Thu Hồn Hoàn
+        // PRIVATE — Logic Đột Phá
         // ====================================================================
 
-        private void UpdateAbsorbingRing(float deltaTime)
+        private void UpdateBreakthrough(float deltaTime)
         {
-            _absorptionElapsed += deltaTime;
+            _elapsed += deltaTime;
             _waveTimer += deltaTime;
 
-            // Mỗi đợt damage
-            if (_waveTimer >= _timeBetweenWaves && _currentDamageWave < ABSORPTION_DAMAGE_WAVES)
+            if (_waveTimer >= _waveInterval && _currentWave < _totalWaves)
             {
                 _waveTimer = 0f;
-                _currentDamageWave++;
+                _currentWave++;
+                _lastWaveTime = _elapsed;
 
-                // Sát thương nội tại = năng lượng bạo liệt từ Hồn Hoàn
-                float damagePerWave = CalculateAbsorptionDamage(_absorbingSoulBeastAge);
-                HP -= damagePerWave;
+                float successRate = CalculateBreakthroughSuccessRate();
 
-                Console.WriteLine($"[Hấp Thu] Đợt {_currentDamageWave}/{ABSORPTION_DAMAGE_WAVES}: " +
-                                  $"Năng lượng Hồn Hoàn xé rách kinh mạch! " +
-                                  $"-{damagePerWave:F0} HP → HP: {HP:F0}/{MaxHP:F0}");
-
-                // Kiểm tra tử vong
-                if (HP <= 0)
+                if (IsHeavenlyTribulation)
                 {
-                    HP = 0;
-                    CurrentState = CultivationState.Dead;
+                    // Lôi kiếp: sát thương cố định theo tỷ lệ, người chơi có thể né
+                    int strikeCount = 1 + (CurrentLevel / 10 - 2) / 2;
+                    float damage = MaxHP * (0.12f + 0.4f * (1f - successRate));
 
-                    Console.WriteLine($"[TỬ VONG] ✗✗✗ {OwnerName} CƠ THỂ BẠO LIỆT! ✗✗✗");
-                    Console.WriteLine($"          Không chịu nổi năng lượng Hồn Hoàn " +
-                                      $"{_absorbingSoulBeastAge} năm tu vi.");
+                    Console.WriteLine($"[Thiên Kiếp] Đợt {_currentWave}/{_totalWaves}: {strikeCount} đạo thiên lôi " +
+                                      $"giáng xuống ({damage:F0} sát thương mỗi đạo)!");
 
-                    _eventManager.Publish(new OnBreakthroughFailedEvent
+                    _eventManager.Publish(new OnLightningStrikeEvent
                     {
                         PlayerName = OwnerName,
-                        Reason = $"Bạo thể khi hấp thu Hồn Hoàn {_absorbingSoulBeastAge} năm " +
-                                 $"(vượt cực hạn {BodyLimit:F0} năm)",
-                        SuccessRate = CalculateAbsorptionSuccessRate(_absorbingSoulBeastAge)
+                        Wave = _currentWave,
+                        TotalWaves = _totalWaves,
+                        StrikeCount = strikeCount,
+                        Damage = damage
                     });
-
-                    _eventManager.Publish(new OnPlayerDiedEvent
-                    {
-                        PlayerName = OwnerName,
-                        CauseOfDeath = "Bạo thể khi hấp thu Hồn Hoàn — kinh mạch đứt nát"
-                    });
-
-                    return;
+                }
+                else
+                {
+                    // Xung quan: linh lực phản phệ kinh mạch, không thể né
+                    float variance = 0.3f + (float)_random.NextDouble() * 0.2f; // 0.3 - 0.5
+                    float damage = MaxHP * (1f - successRate) * variance;
+                    ApplyBreakthroughDamage(damage, $"Đợt {_currentWave}/{_totalWaves}: linh lực phản phệ kinh mạch");
+                    if (CurrentState != CultivationState.Breakthrough) return;
                 }
             }
 
-            // Hoàn tất hấp thu
-            if (_currentDamageWave >= ABSORPTION_DAMAGE_WAVES && _absorptionElapsed >= ABSORPTION_DURATION)
+            // Hoàn tất khi hết các đợt (Thiên Kiếp chờ tia sét cuối cùng đánh xuống)
+            float settleTime = IsHeavenlyTribulation ? LIGHTNING_STRIKE_DELAY + 0.15f : 0.1f;
+            if (_currentWave >= _totalWaves && _elapsed >= _lastWaveTime + settleTime)
             {
-                CompleteAbsorption();
+                CompleteBreakthrough();
             }
         }
 
-        private void CompleteAbsorption()
+        private void ApplyBreakthroughDamage(float damage, string description)
         {
-            SoulRingsCount++;
+            HP -= damage;
+            Console.WriteLine($"[Đột Phá] {description}! -{damage:F0} HP → HP: {Math.Max(0f, HP):F0}/{MaxHP:F0}");
+
+            if (HP <= 0)
+            {
+                FailBreakthrough();
+            }
+        }
+
+        private void FailBreakthrough()
+        {
+            float successRate = CalculateBreakthroughSuccessRate();
+            int oldLevel = CurrentLevel;
+
+            // Đạo cơ tổn hại: rớt một tầng tu vi, Tâm Ma tăng, dược lực tiêu tán
+            CurrentLevel = Math.Max(1, CurrentLevel - 1);
+            CurrentExp = 0;
+            CurrentRealm = GetRealmForLevel(CurrentLevel);
+            MaxHP = CalculateMaxHP(CurrentLevel);
+            HP = MaxHP * 0.2f;
+            MaxSpiritPower = CalculateMaxSpiritPower(CurrentLevel);
+            SpiritPower = Math.Min(SpiritPower, MaxSpiritPower);
+            HeartDemon = Math.Min(MAX_HEART_DEMON, HeartDemon + HEART_DEMON_PER_FAILURE);
+            PillBuff = 0f;
+            CurrentState = CultivationState.Idle;
+
+            string reason = IsHeavenlyTribulation
+                ? "Không chống đỡ nổi Thiên Kiếp — đạo cơ tổn hại"
+                : "Xung quan thất bại — kinh mạch nghịch loạn";
+
+            Console.WriteLine($"[ĐỘT PHÁ THẤT BẠI] ✗✗✗ {OwnerName}: {reason}! ✗✗✗");
+            Console.WriteLine($"          Tu vi rớt từ tầng {oldLevel} xuống tầng {CurrentLevel}. Tâm Ma: {HeartDemon:P0}");
+
+            _eventManager.Publish(new OnBreakthroughFailedEvent
+            {
+                PlayerName = OwnerName,
+                Reason = reason,
+                SuccessRate = successRate,
+                LevelLost = oldLevel - CurrentLevel
+            });
+        }
+
+        private void CompleteBreakthrough()
+        {
+            BreakthroughCount++;
+            bool wasHeavenly = IsHeavenlyTribulation;
+
+            PillBuff = 0f;
+            HeartDemon = 0f;
             CurrentState = CultivationState.Meditating;
             CurrentExp = 0;
-            BodyLimit = CalculateBodyLimit(SoulRingsCount);
 
-            // Tỷ lệ 1% rơi ra Ngoại Phụ Hồn Cốt Bát Chu Mâu nếu hấp thu vượt BodyLimit
-            if (_absorbingSoulBeastAge > BodyLimit && !HasBatChuMau)
+            // 1% cơ duyên thức tỉnh Vạn Độc Thể sau khi đột phá
+            if (!HasVanDocThe && _random.NextDouble() < 0.01)
             {
-                if (_random.NextDouble() < 0.01)
-                {
-                    UnlockBatChuMau();
-                }
+                UnlockVanDocThe();
             }
 
-            // Hồi phục HP sau hấp thu thành công
             MaxHP = CalculateMaxHP(CurrentLevel);
             HP = MaxHP;
-            MaxSoulPower = CalculateMaxSoulPower(CurrentLevel);
-            SoulPower = MaxSoulPower;
+            MaxSpiritPower = CalculateMaxSpiritPower(CurrentLevel);
+            SpiritPower = MaxSpiritPower;
 
-            string ringColor = GetSoulRingColor(SoulRingsCount);
-
-            // Mở khóa Hồn Kỹ tương ứng dựa theo Hệ của Hồn thú và thứ tự Hồn hoàn
-            string skillGainedInfo = "Chưa gán";
-            if (SoulRingsCount == 1)
+            // Lĩnh ngộ Pháp Thuật theo Linh Căn
+            TechniqueData? learned = null;
+            if (BreakthroughCount == 1)
             {
-                Skill1 = _absorbingSoulBeastElement switch
-                {
-                    Core.Combat.Element.Wood => new SoulSkill("Lam Ngan Quan Quanh", Core.Combat.Element.Wood, 1, 20f, 60f),
-                    Core.Combat.Element.Fire => new SoulSkill("Phuong Hoang Hoa Tuyen", Core.Combat.Element.Fire, 1, 25f, 100f),
-                    Core.Combat.Element.Ice => new SoulSkill("Bang Tam Ket Gioi", Core.Combat.Element.Ice, 1, 30f, 80f),
-                    _ => new SoulSkill("Huyen Thiet Kich", Core.Combat.Element.None, 1, 15f, 50f)
-                };
-                skillGainedInfo = Skill1.Name;
+                Skill1 = FindTechnique(1);
+                learned = Skill1;
             }
-            else if (SoulRingsCount == 2)
+            else if (BreakthroughCount == 2)
             {
-                Skill2 = _absorbingSoulBeastElement switch
-                {
-                    Core.Combat.Element.Wood => new SoulSkill("Lam Ngan Tu Lung", Core.Combat.Element.Wood, 2, 40f, 150f),
-                    Core.Combat.Element.Fire => new SoulSkill("Phuong Hoang Huyen Oa", Core.Combat.Element.Fire, 2, 50f, 200f),
-                    Core.Combat.Element.Ice => new SoulSkill("Huyen Bang Xung Kich", Core.Combat.Element.Ice, 2, 45f, 160f),
-                    _ => new SoulSkill("Chan Thien Than Quyen", Core.Combat.Element.None, 2, 35f, 120f)
-                };
-                skillGainedInfo = Skill2.Name;
+                Skill2 = FindTechnique(2);
+                learned = Skill2;
             }
 
-            Console.WriteLine($"[HỒN HOÀN] ★★★ {OwnerName} hấp thu Hồn Hoàn thứ {SoulRingsCount} " +
-                              $"THÀNH CÔNG! ★★★");
-            Console.WriteLine($"           Hồn Hoàn: {ringColor} — " +
-                              $"Hồn Thú {_absorbingSoulBeastAge} năm tu vi (Hệ: {_absorbingSoulBeastElement})");
-            Console.WriteLine($"           Cảnh giới: {GetRealmDisplayName(CurrentRealm)} " +
-                              $"— Cấp {CurrentLevel}");
-            Console.WriteLine($"           Hồn Kỹ mới: {skillGainedInfo}");
-
-            // Tỷ lệ rớt Hồn Cốt: 1/1000
-            bool droppedSoulBone = _random.Next(1000) == 0;
-            if (droppedSoulBone)
+            Console.WriteLine($"[ĐỘT PHÁ] ★★★ {OwnerName} " +
+                              (wasHeavenly ? "vượt qua Thiên Kiếp" : "phá vỡ bình cảnh") +
+                              $" tầng {CurrentLevel} THÀNH CÔNG! ★★★");
+            Console.WriteLine($"           Tiếp tục tu luyện để bước vào {GetRealmDisplayName(GetRealmForLevel(CurrentLevel + 1))}.");
+            if (learned != null)
             {
-                Console.WriteLine($"[CỰC HIẾM] ✦✦✦ HỒN CỐT xuất hiện! " +
-                                  $"{OwnerName} nhận được Soul Bone! ✦✦✦");
+                Console.WriteLine($"           Lĩnh ngộ Pháp Thuật: {learned.Name}");
             }
 
             _eventManager.Publish(new OnBreakthroughSuccessEvent
             {
                 PlayerName = OwnerName,
-                NewRealm = GetRealmDisplayName(CurrentRealm),
-                NewLevel = CurrentLevel,
-                SoulRingNumber = SoulRingsCount
+                Level = CurrentLevel,
+                BreakthroughNumber = BreakthroughCount,
+                WasHeavenlyTribulation = wasHeavenly
             });
 
-            _eventManager.Publish(new OnSoulRingAbsorbedEvent
+            if (learned != null)
             {
-                PlayerName = OwnerName,
-                RingNumber = SoulRingsCount,
-                SoulBeastAge = _absorbingSoulBeastAge,
-                SoulSkillName = "[Chưa gán]"
-            });
-
-            // Tự động tiếp tục Minh Tưởng
-            Console.WriteLine($"[Tu Luyện] {OwnerName} tiếp tục Minh Tưởng...");
+                _eventManager.Publish(new OnTechniqueLearnedEvent
+                {
+                    PlayerName = OwnerName,
+                    TechniqueName = learned.Name,
+                    Tier = learned.Tier
+                });
+            }
         }
 
         /// <summary>
-        /// Mở khóa Ngoại Phụ Hồn Cốt Bát Chu Mâu (tăng vĩnh viễn HP, SP và kích hoạt passive độc).
+        /// Thức tỉnh thể chất Vạn Độc Thể (tăng vĩnh viễn HP, Linh Lực và đòn đánh có thể tẩm độc).
         /// </summary>
-        public void UnlockBatChuMau()
+        public void UnlockVanDocThe()
         {
-            if (HasBatChuMau) return;
-            HasBatChuMau = true;
+            if (HasVanDocThe) return;
+            HasVanDocThe = true;
             MaxHP = CalculateMaxHP(CurrentLevel);
             HP = Math.Clamp(HP + 50f, 0f, MaxHP);
-            MaxSoulPower = CalculateMaxSoulPower(CurrentLevel);
-            SoulPower = Math.Clamp(SoulPower + 30f, 0f, MaxSoulPower);
-            Console.WriteLine($"[CỰC HIẾM] ★★★ {OwnerName} đã hấp thu NGOẠI PHỤ HỒN CỐT BÁT CHU MÂU! (+50 MaxHP, +30 MaxSP, đòn đánh thường có 25% cơ hội tẩm độc) ★★★");
+            MaxSpiritPower = CalculateMaxSpiritPower(CurrentLevel);
+            SpiritPower = Math.Clamp(SpiritPower + 30f, 0f, MaxSpiritPower);
+            Console.WriteLine($"[CƠ DUYÊN] ★★★ {OwnerName} thức tỉnh VẠN ĐỘC THỂ! (+50 MaxHP, +30 Linh Lực, đòn đánh có 25% cơ hội tẩm độc) ★★★");
+        }
+
+        /// <summary>Tìm Pháp Thuật theo tier và hệ Linh Căn (không có thì dùng pháp thuật vô thuộc tính).</summary>
+        private TechniqueData? FindTechnique(int tier)
+        {
+            return _techniques.FirstOrDefault(t => t.Tier == tier && ElementExtensions.ParseElement(t.Element) == SpiritRootElement)
+                ?? _techniques.FirstOrDefault(t => t.Tier == tier && ElementExtensions.ParseElement(t.Element) == Element.None);
         }
 
         // ====================================================================
@@ -713,8 +733,7 @@ namespace SandboxTuTien.Components
         // ====================================================================
 
         /// <summary>
-        /// EXP cần để lên cấp = BASE × (1 + level × 0.5).
-        /// Cấp càng cao càng cần nhiều EXP.
+        /// Tu vi cần để lên tầng = BASE × (1 + tầng × 0.5).
         /// </summary>
         private float CalculateExpRequired(int level)
         {
@@ -722,101 +741,72 @@ namespace SandboxTuTien.Components
         }
 
         /// <summary>
-        /// HP tối đa = 100 + level × 20 + 50 (nếu có Bát Chu Mâu).
+        /// HP tối đa = 100 + tầng × 20 + 50 (nếu có Vạn Độc Thể).
         /// </summary>
         private float CalculateMaxHP(int level)
         {
             float baseHP = 100f + level * 20f;
-            return HasBatChuMau ? baseHP + 50f : baseHP;
+            return HasVanDocThe ? baseHP + 50f : baseHP;
         }
 
         /// <summary>
-        /// Hồn Lực năng lượng tối đa = 100 + level × 10 + 30 (nếu có Bát Chu Mâu).
+        /// Linh Lực tối đa = 100 + tầng × 10 + 30 (nếu có Vạn Độc Thể).
         /// </summary>
-        private float CalculateMaxSoulPower(int level)
+        private float CalculateMaxSpiritPower(int level)
         {
             float baseSP = 100f + level * 10f;
-            return HasBatChuMau ? baseSP + 30f : baseSP;
+            return HasVanDocThe ? baseSP + 30f : baseSP;
         }
 
         /// <summary>
-        /// Cực hạn chịu đựng cơ thể dựa trên số Hồn Hoàn đã hấp thu.
-        /// Theo CONTEXT mục 2.B — giới hạn Hồn Hoàn:
-        ///   Ring 1: 100-423 năm → limit ~423
-        ///   Ring 2: ~760 năm
-        ///   Ring 3: ~1700 năm
-        ///   Ring 4: ~5000 năm
-        ///   Ring 5: ~12000 năm
-        ///   Ring 6: ~20000 năm
-        ///   Ring 7: ~50000 năm
-        ///   Ring 8-9: ~100000 năm
+        /// Tỷ lệ gốc của bình cảnh: tầng 10 = 85%, mỗi đại cảnh giới sau giảm 15%, tối thiểu 20%.
         /// </summary>
-        private float CalculateBodyLimit(int currentRingCount)
+        private static float CalculateBaseBreakthroughRate(int level)
         {
-            int nextRing = currentRingCount + 1;
-            return nextRing switch
-            {
-                1 => 423f,
-                2 => 760f,
-                3 => 1700f,
-                4 => 5000f,
-                5 => 12000f,
-                6 => 20000f,
-                7 => 50000f,
-                8 => 100000f,
-                9 => 100000f,
-                _ => 100f
-            };
+            int bottleneckIndex = Math.Max(0, level / 10 - 1);
+            return Math.Max(0.2f, 0.85f - 0.15f * bottleneckIndex);
         }
 
         /// <summary>
-        /// Tỷ lệ thành công hấp thu Hồn Hoàn (theo CONTEXT mục 3.C):
-        /// Tỷ_Lệ = (Body_Limit / Hồn_Hoàn_Age) × 100% + Willpower_Buff
-        /// Clamp trong [0%, 100%].
-        /// Nếu Body_Limit >= Hồn_Hoàn_Age → gần 100% (an toàn).
-        /// Nếu Hồn_Hoàn_Age >> Body_Limit → rủi ro cực cao.
+        /// Tỷ_Lệ_Thành_Công = Tỷ_Lệ_Gốc + Đan_Dược_Buff + Ổn_Định_Đạo_Tâm(2%/lần Space) − Tâm_Ma.
+        /// Clamp trong [5%, 100%].
         /// </summary>
-        private float CalculateAbsorptionSuccessRate(int soulBeastAge)
+        public float CalculateBreakthroughSuccessRate()
         {
-            if (soulBeastAge <= 0) return 1f;
-            float qteBuff = QTEPressCount * 0.02f; // Mỗi lần ấn Spacebar cộng 2% tỷ lệ thành công
-            float rate = (BodyLimit / soulBeastAge) + WillpowerBuff + qteBuff;
-            return Math.Clamp(rate, 0f, 1f);
+            float qteBuff = QTEPressCount * 0.02f;
+            float rate = CalculateBaseBreakthroughRate(CurrentLevel) + PillBuff + qteBuff - HeartDemon;
+            return Math.Clamp(rate, 0.05f, 1f);
         }
 
         /// <summary>
-        /// Sát thương nội tại mỗi đợt khi hấp thu.
-        /// Tỷ lệ nghịch với tỷ lệ thành công — Hồn Hoàn càng mạnh, damage càng lớn.
-        /// Damage = MaxHP × (1 - SuccessRate) × (0.3 + random variance)
+        /// Đang ở mốc bình cảnh (tầng 10, 20, ...) mà chưa đột phá mốc đó.
         /// </summary>
-        private float CalculateAbsorptionDamage(int soulBeastAge)
+        private bool IsAtBottleneck()
         {
-            float successRate = CalculateAbsorptionSuccessRate(soulBeastAge);
-            float dangerFactor = 1f - successRate;
-            float variance = 0.3f + (float)_random.NextDouble() * 0.2f; // 0.3 - 0.5
-            return MaxHP * dangerFactor * variance;
+            return CurrentLevel > 0 && CurrentLevel < MAX_LEVEL &&
+                   CurrentLevel % 10 == 0 && BreakthroughCount < CurrentLevel / 10;
         }
 
         // ====================================================================
         // STATIC HELPERS
         // ====================================================================
 
-        /// <summary>Xác định cảnh giới dựa trên cấp Hồn Lực.</summary>
+        /// <summary>Xác định đại cảnh giới dựa trên tầng tu vi.</summary>
         public static CultivationRealm GetRealmForLevel(int level)
         {
             return level switch
             {
-                >= 100 => CultivationRealm.Than,
-                >= 91 => CultivationRealm.PhongHaoDauLa,
-                >= 81 => CultivationRealm.HonDauLa,
-                >= 71 => CultivationRealm.HonThanh,
-                >= 61 => CultivationRealm.HonDe,
-                >= 51 => CultivationRealm.HonVuong,
-                >= 41 => CultivationRealm.HonTong,
-                >= 31 => CultivationRealm.HonTon,
-                >= 21 => CultivationRealm.DaiHonSu,
-                >= 11 => CultivationRealm.HonSu,
-                _ => CultivationRealm.HonSi
+                >= 100 => CultivationRealm.TienDe,
+                >= 91 => CultivationRealm.ChanTien,
+                >= 81 => CultivationRealm.DoKiep,
+                >= 71 => CultivationRealm.DaiThua,
+                >= 61 => CultivationRealm.HopThe,
+                >= 51 => CultivationRealm.LuyenHu,
+                >= 41 => CultivationRealm.HoaThan,
+                >= 31 => CultivationRealm.NguyenAnh,
+                >= 21 => CultivationRealm.KimDan,
+                >= 11 => CultivationRealm.TrucCo,
+                _ => CultivationRealm.LuyenKhi
             };
         }
 
@@ -825,46 +815,41 @@ namespace SandboxTuTien.Components
         {
             return realm switch
             {
-                CultivationRealm.HonSi => "Hồn Sĩ",
-                CultivationRealm.HonSu => "Hồn Sư",
-                CultivationRealm.DaiHonSu => "Đại Hồn Sư",
-                CultivationRealm.HonTon => "Hồn Tôn",
-                CultivationRealm.HonTong => "Hồn Tông",
-                CultivationRealm.HonVuong => "Hồn Vương",
-                CultivationRealm.HonDe => "Hồn Đế",
-                CultivationRealm.HonThanh => "Hồn Thánh",
-                CultivationRealm.HonDauLa => "Hồn Đấu La",
-                CultivationRealm.PhongHaoDauLa => "Phong Hào Đấu La",
-                CultivationRealm.Than => "Thần",
+                CultivationRealm.LuyenKhi => "Luyện Khí",
+                CultivationRealm.TrucCo => "Trúc Cơ",
+                CultivationRealm.KimDan => "Kim Đan",
+                CultivationRealm.NguyenAnh => "Nguyên Anh",
+                CultivationRealm.HoaThan => "Hóa Thần",
+                CultivationRealm.LuyenHu => "Luyện Hư",
+                CultivationRealm.HopThe => "Hợp Thể",
+                CultivationRealm.DaiThua => "Đại Thừa",
+                CultivationRealm.DoKiep => "Độ Kiếp",
+                CultivationRealm.ChanTien => "Chân Tiên",
+                CultivationRealm.TienDe => "Tiên Đế",
                 _ => "Không Rõ"
             };
         }
 
-        /// <summary>Trả về màu Hồn Hoàn theo thứ tự (1-9).</summary>
-        private static string GetSoulRingColor(int ringNumber)
+        /// <summary>Tên Linh Căn theo phẩm chất và hệ, VD: "Thiên Linh Căn (Hỏa)".</summary>
+        public string GetSpiritRootName()
         {
-            return ringNumber switch
+            string quality = SpiritRootMultiplier switch
             {
-                1 => "Bạch sắc (Trắng)",
-                2 => "Hoàng sắc (Vàng)",
-                3 => "Tử sắc (Tím)",
-                4 => "Hắc sắc (Đen)",
-                5 => "Hắc sắc (Đen)",
-                6 => "Hắc sắc (Đen)",
-                7 => "Hắc sắc (Đen)",
-                8 => "Hồng sắc (Đỏ)",
-                9 => "Hồng sắc (Đỏ)",
-                _ => "Không Rõ"
+                >= 1.8f => "Thiên Linh Căn",
+                >= 1.2f => "Chân Linh Căn",
+                >= 0.5f => "Tạp Linh Căn",
+                > 0f => "Ngụy Linh Căn",
+                _ => "Phế Linh Căn"
             };
+            return SpiritRootMultiplier > 0f ? $"{quality} ({SpiritRootElement.GetDisplayName()})" : quality;
         }
 
         // ====================================================================
-        // SERIALIZATION (Placeholder cho Save/Load System)
+        // SERIALIZATION
         // ====================================================================
 
         /// <summary>
         /// Trả về chuỗi JSON biểu diễn trạng thái hiện tại.
-        /// Theo yêu cầu CONTEXT mục 5: Robust Save/Load System.
         /// </summary>
         public string Serialize()
         {
@@ -873,81 +858,56 @@ namespace SandboxTuTien.Components
                 ownerName = OwnerName,
                 currentLevel = CurrentLevel,
                 currentExp = CurrentExp,
-                innateMultiplier = InnateMultiplier,
+                spiritRootMultiplier = SpiritRootMultiplier,
+                spiritRootElement = SpiritRootElement.ToString(),
                 currentState = CurrentState.ToString(),
                 currentRealm = CurrentRealm.ToString(),
-                soulRingsCount = SoulRingsCount,
+                breakthroughCount = BreakthroughCount,
                 hp = HP,
                 maxHp = MaxHP,
-                soulPower = SoulPower,
-                maxSoulPower = MaxSoulPower,
-                willpowerBuff = WillpowerBuff
+                spiritPower = SpiritPower,
+                maxSpiritPower = MaxSpiritPower,
+                pillBuff = PillBuff,
+                heartDemon = HeartDemon
             };
 
             return System.Text.Json.JsonSerializer.Serialize(data);
         }
 
         /// <summary>
-        /// Khôi phục trạng thái tu vi từ hệ thống lưu trữ MySQL (Save/Load).
+        /// Khôi phục trạng thái tu luyện từ hệ thống lưu trữ MySQL (Save/Load).
         /// </summary>
-        public void LoadState(int level, float exp, float hp, float maxHp, float sp, float maxSp, int ringsCount, bool hasBatChuMau, string realmStr, string skill1Name, string skill2Name)
+        public void LoadState(int level, float exp, float hp, float maxHp, float sp, float maxSp,
+                              int breakthroughCount, bool hasVanDocThe, float heartDemon,
+                              string realmStr, string skill1Id, string skill2Id)
         {
             CurrentLevel = level;
             CurrentExp = exp;
             HP = hp;
             MaxHP = maxHp;
-            SoulPower = sp;
-            MaxSoulPower = maxSp;
-            SoulRingsCount = ringsCount;
-            HasBatChuMau = hasBatChuMau;
-            BodyLimit = CalculateBodyLimit(SoulRingsCount);
+            SpiritPower = sp;
+            MaxSpiritPower = maxSp;
+            BreakthroughCount = breakthroughCount;
+            HasVanDocThe = hasVanDocThe;
+            HeartDemon = Math.Clamp(heartDemon, 0f, MAX_HEART_DEMON);
+            PillBuff = 0f;
+            HoTTimer = 0f;
 
-            if (Enum.TryParse<CultivationRealm>(realmStr, out var realm))
+            CurrentRealm = Enum.TryParse<CultivationRealm>(realmStr, out var realm)
+                ? realm
+                : GetRealmForLevel(CurrentLevel);
+
+            Skill1 = _techniques.FirstOrDefault(t => t.Id == skill1Id);
+            Skill2 = _techniques.FirstOrDefault(t => t.Id == skill2Id);
+
+            // Khôi phục trạng thái FSM (bình cảnh nếu chưa đột phá mốc hiện tại)
+            if (HP > 0)
             {
-                CurrentRealm = realm;
+                CurrentState = IsAtBottleneck() ? CultivationState.BreakthroughReady : CultivationState.Idle;
             }
             else
             {
-                CurrentRealm = GetRealmForLevel(CurrentLevel);
-            }
-
-            // Phục hồi các kỹ năng đã học dựa vào tên kỹ năng
-            if (!string.IsNullOrEmpty(skill1Name))
-            {
-                if (skill1Name.Contains("Lam Ngan"))
-                    Skill1 = new SoulSkill(skill1Name, Core.Combat.Element.Wood, 1, 20f, 60f);
-                else if (skill1Name.Contains("Phuong Hoang"))
-                    Skill1 = new SoulSkill(skill1Name, Core.Combat.Element.Fire, 1, 25f, 100f);
-                else if (skill1Name.Contains("Bang"))
-                    Skill1 = new SoulSkill(skill1Name, Core.Combat.Element.Ice, 1, 30f, 80f);
-                else
-                    Skill1 = new SoulSkill(skill1Name, Core.Combat.Element.None, 1, 15f, 50f);
-            }
-            else
-            {
-                Skill1 = null;
-            }
-
-            if (!string.IsNullOrEmpty(skill2Name))
-            {
-                if (skill2Name.Contains("Lam Ngan"))
-                    Skill2 = new SoulSkill(skill2Name, Core.Combat.Element.Wood, 2, 40f, 150f);
-                else if (skill2Name.Contains("Phuong Hoang"))
-                    Skill2 = new SoulSkill(skill2Name, Core.Combat.Element.Fire, 2, 50f, 200f);
-                else if (skill2Name.Contains("Bang"))
-                    Skill2 = new SoulSkill(skill2Name, Core.Combat.Element.Ice, 2, 45f, 160f);
-                else
-                    Skill2 = new SoulSkill(skill2Name, Core.Combat.Element.None, 2, 35f, 120f);
-            }
-            else
-            {
-                Skill2 = null;
-            }
-
-            // Đưa trạng thái về Idle nếu không bị chết
-            if (HP > 0 && CurrentState == CultivationState.Dead)
-            {
-                CurrentState = CultivationState.Idle;
+                CurrentState = CultivationState.Dead;
             }
         }
     }

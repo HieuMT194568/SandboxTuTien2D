@@ -6,10 +6,53 @@
     <Spacing>0</Spacing>
     <UseKerning>true</UseKerning>
     <Style>Regular</Style>
+    <!-- Ký tự thay thế khi gặp ký tự ngoài bảng (tránh crash DrawString) -->
+    <DefaultCharacter>?</DefaultCharacter>
     <CharacterRegions>
+      <!-- ASCII -->
       <CharacterRegion>
         <Start>&#32;</Start>
         <End>&#126;</End>
+      </CharacterRegion>
+      <!-- Latin-1: À Á Â Ã È É Ê Ì Í Ò Ó Ô Õ Ù Ú Ý ... -->
+      <CharacterRegion>
+        <Start>&#192;</Start>
+        <End>&#255;</End>
+      </CharacterRegion>
+      <!-- Ă ă -->
+      <CharacterRegion>
+        <Start>&#258;</Start>
+        <End>&#259;</End>
+      </CharacterRegion>
+      <!-- Đ đ -->
+      <CharacterRegion>
+        <Start>&#272;</Start>
+        <End>&#273;</End>
+      </CharacterRegion>
+      <!-- Ĩ ĩ -->
+      <CharacterRegion>
+        <Start>&#296;</Start>
+        <End>&#297;</End>
+      </CharacterRegion>
+      <!-- Ũ ũ -->
+      <CharacterRegion>
+        <Start>&#360;</Start>
+        <End>&#361;</End>
+      </CharacterRegion>
+      <!-- Ơ ơ -->
+      <CharacterRegion>
+        <Start>&#416;</Start>
+        <End>&#417;</End>
+      </CharacterRegion>
+      <!-- Ư ư -->
+      <CharacterRegion>
+        <Start>&#431;</Start>
+        <End>&#432;</End>
+      </CharacterRegion>
+      <!-- Latin Extended Additional: Ạ ả Ấ ầ ... ỹ -->
+      <CharacterRegion>
+        <Start>&#7840;</Start>
+        <End>&#7929;</End>
       </CharacterRegion>
     </CharacterRegions>
   </Asset>

@@ -1,44 +1,49 @@
 [
   {
-    "item_id": "food_huong_trang_01",
-    "name": "Khôi Phục Hương Tràng",
+    "item_id": "dan_hoi_xuan",
+    "name": "Hồi Xuân Đan",
     "type": "CONSUMABLE",
-    "source": "SOUL_SKILL_CREATED",
-    "tier_required": 1,
+    "source": "NPC_ALCHEMIST",
+    "tier_required": 0,
     "effects": [
-      {
-        "type": "HEAL_HP",
-        "value_percentage": 20
-      },
-      {
-        "type": "RECOVER_SOUL_POWER",
-        "value_percentage": 10
-      }
+      { "type": "HEAL_HP", "value_percentage": 20 },
+      { "type": "HEAL_HP_OVER_TIME", "value_percentage": 5, "duration": 10 }
     ],
-    "spoilage_time": 43200
+    "spoilage_time": -1
   },
   {
-    "item_id": "food_da_long_trang_02",
-    "name": "Đà Long Trường Nha Xúc Xích",
+    "item_id": "dan_bo_linh",
+    "name": "Bổ Linh Đan",
     "type": "CONSUMABLE",
-    "source": "SOUL_SKILL_CREATED",
-    "tier_required": 2,
+    "source": "CRAFTED",
+    "tier_required": 0,
     "effects": [
-      {
-        "type": "HEAL_HP",
-        "value_percentage": 35
-      },
-      {
-        "type": "BOOST_ATTACK",
-        "value": 15,
-        "duration": 300
-      }
+      { "type": "RECOVER_SPIRIT_POWER", "value_percentage": 50 }
     ],
-    "spoilage_time": 21600
+    "crafting_recipe": [
+      { "item_id": "yeu_dan_ha_pham", "quantity": 1 },
+      { "item_id": "linh_moc_tam", "quantity": 1 }
+    ],
+    "spoilage_time": -1
   },
   {
-    "item_id": "item_thiet_mau_01",
-    "name": "Thiết Mẫu Ammo",
+    "item_id": "dan_pha_canh",
+    "name": "Phá Cảnh Đan",
+    "type": "CONSUMABLE",
+    "source": "CRAFTED",
+    "tier_required": 0,
+    "effects": [
+      { "type": "BREAKTHROUGH_BUFF", "value_percentage": 15 }
+    ],
+    "crafting_recipe": [
+      { "item_id": "yeu_dan_ha_pham", "quantity": 2 },
+      { "item_id": "hoa_tinh_thach", "quantity": 1 }
+    ],
+    "spoilage_time": -1
+  },
+  {
+    "item_id": "linh_thach",
+    "name": "Linh Thạch",
     "type": "CONSUMABLE",
     "source": "CRAFTED",
     "tier_required": 0,
@@ -46,8 +51,8 @@
     "spoilage_time": -1
   },
   {
-    "item_id": "mat_thi_thiet_mau",
-    "name": "Thiết Mẫu Thô",
+    "item_id": "han_thiet",
+    "name": "Hàn Thiết",
     "type": "CONSUMABLE",
     "source": "MONSTER_DROPPED",
     "tier_required": 0,
@@ -55,8 +60,8 @@
     "spoilage_time": -1
   },
   {
-    "item_id": "lo_xo_co_quan",
-    "name": "Lò Xo Cơ Quan",
+    "item_id": "hoa_tinh_thach",
+    "name": "Hỏa Tinh Thạch",
     "type": "CONSUMABLE",
     "source": "MONSTER_DROPPED",
     "tier_required": 0,
@@ -64,12 +69,45 @@
     "spoilage_time": -1
   },
   {
-    "item_id": "day_cung_kim_ti",
-    "name": "Dây Cung Kim Ty",
+    "item_id": "linh_moc_tam",
+    "name": "Linh Mộc Tâm",
     "type": "CONSUMABLE",
     "source": "MONSTER_DROPPED",
     "tier_required": 0,
     "effects": [],
+    "spoilage_time": -1
+  },
+  {
+    "item_id": "yeu_dan_ha_pham",
+    "name": "Hạ Phẩm Yêu Đan",
+    "type": "CONSUMABLE",
+    "source": "MONSTER_DROPPED",
+    "tier_required": 0,
+    "effects": [
+      { "type": "GAIN_CULTIVATION", "value": 150 }
+    ],
+    "spoilage_time": -1
+  },
+  {
+    "item_id": "yeu_dan_trung_pham",
+    "name": "Trung Phẩm Yêu Đan",
+    "type": "CONSUMABLE",
+    "source": "MONSTER_DROPPED",
+    "tier_required": 1,
+    "effects": [
+      { "type": "GAIN_CULTIVATION", "value": 600 }
+    ],
+    "spoilage_time": -1
+  },
+  {
+    "item_id": "yeu_dan_thuong_pham",
+    "name": "Thượng Phẩm Yêu Đan",
+    "type": "CONSUMABLE",
+    "source": "MONSTER_DROPPED",
+    "tier_required": 2,
+    "effects": [
+      { "type": "GAIN_CULTIVATION", "value": 2500 }
+    ],
     "spoilage_time": -1
   }
 ]

@@ -4,8 +4,8 @@ using Microsoft.Xna.Framework;
 namespace SandboxTuTien.Components
 {
     /// <summary>
-    /// Component sản sinh vật phẩm tiêu hao/đạn dược tự động theo chu kỳ thời gian.
-    /// Có thể gắn vào NPC (Oscar) hoặc công trình (Lò Rèn).
+    /// Component sản sinh vật phẩm tiêu hao tự động theo chu kỳ thời gian.
+    /// Có thể gắn vào NPC (Đan Sư) hoặc công trình (Lò Luyện Khí).
     /// </summary>
     public class ConsumableSpawner
     {
@@ -14,7 +14,7 @@ namespace SandboxTuTien.Components
         public float Timer { get; set; }
         public string ItemId { get; set; }
         public string ItemName { get; set; }
-        public string ItemType { get; set; } // CONSUMABLE hoặc HIDDEN_WEAPON
+        public string ItemType { get; set; } // CONSUMABLE hoặc MAGIC_WEAPON
         public int Quantity { get; set; }
 
         /// <summary>Sự kiện kích hoạt khi sinh vật phẩm thành công.</summary>

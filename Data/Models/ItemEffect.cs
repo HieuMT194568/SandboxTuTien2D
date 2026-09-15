@@ -4,14 +4,14 @@ namespace SandboxTuTien.Data.Models
 {
     /// <summary>
     /// POCO class biểu diễn hiệu ứng (effect) của vật phẩm.
-    /// Dùng chung cho cả Ám Khí (debuff) và Thực Phẩm (heal/buff).
+    /// Dùng chung cho cả Pháp Khí (debuff) và Đan Dược (heal/buff).
     /// Ánh xạ trực tiếp từ JSON "effects" array.
     /// </summary>
     public class ItemEffect
     {
         /// <summary>
-        /// Loại hiệu ứng: APPLY_DEBUFF, HEAL_HP, RECOVER_SOUL_POWER,
-        /// BOOST_ATTACK, BOOST_DEFENSE, v.v.
+        /// Loại hiệu ứng: APPLY_DEBUFF, HEAL_HP, HEAL_HP_OVER_TIME, RECOVER_SPIRIT_POWER,
+        /// BREAKTHROUGH_BUFF (cộng % tỷ lệ đột phá), GAIN_CULTIVATION (cộng tu vi).
         /// </summary>
         [JsonPropertyName("type")]
         public string Type { get; set; } = string.Empty;

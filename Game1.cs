@@ -17,7 +17,7 @@ using SandboxTuTien.Systems;
 namespace SandboxTuTien;
 
 /// <summary>
-/// Đối tượng chữ nổi phục vụ hiển thị sát thương hoặc thông báo (chỉ dùng ASCII).
+/// Đối tượng chữ nổi phục vụ hiển thị sát thương hoặc thông báo.
 /// </summary>
 public class FloatingText
 {
@@ -47,10 +47,54 @@ public class FloatingText
 }
 
 /// <summary>
+/// Một đạo thiên lôi trong Thiên Kiếp: hiện vòng báo hiệu tại vị trí,
+/// sau Delay giây thì đánh xuống; người chơi đứng trong vòng sẽ chịu sát thương.
+/// </summary>
+public class LightningStrike
+{
+    public Vector2 Position;
+    public float Delay;
+    public float Damage;
+    public float Radius = 30f;
+    public float FlashTimer;
+    public bool Landed;
+    public int Seed;
+
+    public bool Finished => Landed && FlashTimer <= 0f;
+
+    public LightningStrike(Vector2 position, float delay, float damage, int seed)
+    {
+        Position = position;
+        Delay = delay;
+        Damage = damage;
+        Seed = seed;
+    }
+}
+
+/// <summary>
 /// Game1 — Điểm tích hợp giao diện đồ họa và tất cả các hệ thống.
 /// </summary>
 public class Game1 : Game
 {
+    private const string PLAYER_NAME = "Lâm Phong";
+    private const int MAX_FORMATIONS = 3;
+    private const string SPIRIT_STONE_ID = "linh_thach";
+
+    private static readonly Vector2 AlchemistPosition = new Vector2(250, 380);
+    private static readonly Vector2 ForgePosition = new Vector2(550, 380);
+
+    // Bố cục bảng Lò Luyện (dùng chung cho vẽ và xử lý click)
+    private const int MAX_RECIPES_SHOWN = 4;
+    private const int CRAFT_PANEL_X = 20;
+    private const int CRAFT_PANEL_Y = 15;
+    private const int CRAFT_PANEL_W = 300;
+    private const int CRAFT_PANEL_H = 505;
+    private const int CRAFT_SLOT_START_Y = CRAFT_PANEL_Y + 52;
+    private const int CRAFT_SLOT_H = 88;
+    private const int CRAFT_SLOT_GAP = 6;
+    private const int CRAFT_BTN_Y = CRAFT_PANEL_Y + 440;
+    private const int CRAFT_BTN_H = 50;
+
     private GraphicsDeviceManager _graphics;
     private SpriteBatch _spriteBatch = null!;
 
@@ -65,11 +109,13 @@ public class Game1 : Game
     private Texture2D _monsterIceTexture = null!;
     private Texture2D _needleTexture = null!;
     private Texture2D _boltTexture = null!;
-    private Texture2D _sausageTexture = null!;
+    private Texture2D _pillTexture = null!;
+    private Texture2D _beastCoreTexture = null!;
+    private Texture2D _materialTexture = null!;
     private Texture2D _ringTexture = null!;
-    private Texture2D _turretTexture = null!;
-    private Texture2D _oscarTexture = null!;
-    private Texture2D _anvilTexture = null!;
+    private Texture2D _formationTexture = null!;
+    private Texture2D _alchemistTexture = null!;
+    private Texture2D _forgeTexture = null!;
 
     // ========================================================================
     // HỆ THỐNG CỐT LÕI
@@ -86,25 +132,26 @@ public class Game1 : Game
     private Player _player = null!;
     private ProjectilePool _projectilePool = null!;
     private readonly List<Monster> _monsters = new();
-    private readonly List<SoulRingEntity> _soulRings = new();
     private readonly List<FloatingText> _floatingTexts = new();
-    private readonly List<AutoLauncher> _launchers = new();
+    private readonly List<FormationArray> _formations = new();
+    private readonly List<LightningStrike> _lightningStrikes = new();
     private readonly List<Particle> _particles = new();
-    private ConsumableSpawner _oscarSpawner = null!;
-    private ConsumableSpawner _anvilSpawner = null!;
+    private ConsumableSpawner _alchemistSpawner = null!;
+    private ConsumableSpawner _forgeSpawner = null!;
     private readonly List<DroppedItem> _droppedItems = new();
-    private int _nextTurretTypeToPlace = 1;
+    private int _nextFormationType = 1;
     private float _contactDamageTimer = 0f;
 
     private float _shakeTime = 0f;
     private float _shakeIntensity = 0f;
-    private Vector2 _absorbingRingPosition = Vector2.Zero;
     private Vector2 _cameraPosition = Vector2.Zero;
     private const float MAP_WIDTH = 2000f;
     private const float MAP_HEIGHT = 2000f;
 
-    private List<HiddenWeaponData> _hiddenWeapons = null!;
+    private List<MagicWeaponData> _magicWeapons = null!;
     private List<ConsumableData> _consumables = null!;
+    private List<TechniqueData> _techniques = null!;
+    private List<CraftingRecipe> _recipes = new();
 
     // ========================================================================
     // TRẠNG THÁI GIAO DIỆN
@@ -130,8 +177,8 @@ public class Game1 : Game
         _graphics.ApplyChanges();
 
         Console.WriteLine("╔══════════════════════════════════════════════════════════╗");
-        Console.WriteLine("║     SANDBOX TU TIÊN 2D PIXEL — ĐẤU LA ĐẠI LỤC         ║");
-        Console.WriteLine("║     Mô-đun Chiến đấu, Túi đồ & Đồ họa v2.0               ║");
+        Console.WriteLine("║            SANDBOX TU TIÊN 2D PIXEL                      ║");
+        Console.WriteLine("║     Tu Luyện, Thiên Kiếp, Luyện Đan & Trận Pháp v3.0      ║");
         Console.WriteLine("╚══════════════════════════════════════════════════════════╝");
         Console.WriteLine();
 
@@ -158,34 +205,36 @@ public class Game1 : Game
         // 5. Khởi tạo Projectile Pool
         _projectilePool = new ProjectilePool();
 
-        // 6. Tạo Player
+        // 6. Tạo Player — Thiên Linh Căn hệ Hỏa, bắt đầu từ Luyện Khí tầng 1
         _player = new Player(
-            name: "Đường Tam",
+            name: PLAYER_NAME,
             eventManager: _eventManager,
-            innateLevel: 10,
-            innateMultiplier: 2.0f
+            techniques: _techniques,
+            innateLevel: 1,
+            spiritRootMultiplier: 2.0f,
+            spiritRootElement: Element.Fire
         );
         _cultivationSystem.RegisterComponent(_player.Cultivation);
 
         // 7. Cấp phát túi đồ mặc định
         GiveInitialInventoryItems();
 
-        _oscarSpawner = new ConsumableSpawner(new Vector2(250, 380), 15f, "food_huong_trang_01", "Sausage", "CONSUMABLE", 1);
-        _anvilSpawner = new ConsumableSpawner(new Vector2(550, 380), 10f, "item_thiet_mau_01", "Thiet Mau Ammo", "CONSUMABLE", 1);
+        _alchemistSpawner = new ConsumableSpawner(AlchemistPosition, 15f, "dan_hoi_xuan", GetItemName("dan_hoi_xuan"), InventoryComponent.TYPE_CONSUMABLE, 1);
+        _forgeSpawner = new ConsumableSpawner(ForgePosition, 10f, SPIRIT_STONE_ID, GetItemName(SPIRIT_STONE_ID), InventoryComponent.TYPE_CONSUMABLE, 1);
 
-        _oscarSpawner.OnSpawn += (pos, id, name, type, qty) => {
+        _alchemistSpawner.OnSpawn += (pos, id, name, type, qty) => {
             _droppedItems.Add(new DroppedItem(pos, id, name, type, qty));
-            _floatingTexts.Add(new FloatingText(pos - new Vector2(0, 15), $"+ Dropped {name}", Color.Orange, 1.5f));
+            _floatingTexts.Add(new FloatingText(pos - new Vector2(0, 15), $"+ {name}", Color.Orange, 1.5f));
         };
-        _anvilSpawner.OnSpawn += (pos, id, name, type, qty) => {
+        _forgeSpawner.OnSpawn += (pos, id, name, type, qty) => {
             _droppedItems.Add(new DroppedItem(pos, id, name, type, qty));
-            _floatingTexts.Add(new FloatingText(pos - new Vector2(0, 15), $"+ Dropped {name}", Color.Gray, 1.5f));
+            _floatingTexts.Add(new FloatingText(pos - new Vector2(0, 15), $"+ {name}", Color.LightSkyBlue, 1.5f));
         };
 
         _previousKeyState = Keyboard.GetState();
         _previousMouseState = Mouse.GetState();
 
-        // Sinh ngẫu nhiên một số Hồn Thú ban đầu rải rác trên bản đồ để thế giới sống động
+        // Sinh ngẫu nhiên một số Yêu Thú ban đầu rải rác trên bản đồ
         for (int i = 0; i < 15; i++)
         {
             Vector2 randomPos = new Vector2(
@@ -210,17 +259,20 @@ public class Game1 : Game
         _pixelTexture = new Texture2D(GraphicsDevice, 1, 1);
         _pixelTexture.SetData(new[] { Color.White });
 
+        // File .png nếu có sẽ được ưu tiên; nếu không, dùng hình vẽ thủ tục từ PixelArtGenerator
         _playerTexture = LoadTextureFromFile("Content/Sprites/player.png", () => PixelArtGenerator.CreatePlayerTexture(GraphicsDevice));
         _monsterPlantTexture = LoadTextureFromFile("Content/Sprites/monster_plant.png", () => PixelArtGenerator.CreateMonsterPlantTexture(GraphicsDevice));
         _monsterFireTexture = LoadTextureFromFile("Content/Sprites/monster_fire.png", () => PixelArtGenerator.CreateMonsterFireTexture(GraphicsDevice));
         _monsterIceTexture = LoadTextureFromFile("Content/Sprites/monster_ice.png", () => PixelArtGenerator.CreateMonsterIceTexture(GraphicsDevice));
         _needleTexture = LoadTextureFromFile("Content/Sprites/needle.png", () => PixelArtGenerator.CreateProjectileNeedleTexture(GraphicsDevice));
         _boltTexture = LoadTextureFromFile("Content/Sprites/bolt.png", () => PixelArtGenerator.CreateProjectileBoltTexture(GraphicsDevice));
-        _sausageTexture = LoadTextureFromFile("Content/Sprites/sausage.png", () => PixelArtGenerator.CreateSausageTexture(GraphicsDevice));
+        _pillTexture = LoadTextureFromFile("Content/Sprites/pill.png", () => PixelArtGenerator.CreatePillTexture(GraphicsDevice));
+        _beastCoreTexture = LoadTextureFromFile("Content/Sprites/beast_core.png", () => PixelArtGenerator.CreateBeastCoreTexture(GraphicsDevice));
+        _materialTexture = LoadTextureFromFile("Content/Sprites/material.png", () => PixelArtGenerator.CreateMaterialTexture(GraphicsDevice));
         _ringTexture = LoadTextureFromFile("Content/Sprites/ring.png", () => PixelArtGenerator.CreateRingTexture(GraphicsDevice, 32));
-        _turretTexture = LoadTextureFromFile("Content/Sprites/turret.png", () => PixelArtGenerator.CreateTurretTexture(GraphicsDevice));
-        _oscarTexture = LoadTextureFromFile("Content/Sprites/oscar.png", () => PixelArtGenerator.CreatePlayerTexture(GraphicsDevice));
-        _anvilTexture = LoadTextureFromFile("Content/Sprites/anvil.png", () => PixelArtGenerator.CreateTurretTexture(GraphicsDevice));
+        _formationTexture = LoadTextureFromFile("Content/Sprites/formation_flag.png", () => PixelArtGenerator.CreateFormationFlagTexture(GraphicsDevice));
+        _alchemistTexture = LoadTextureFromFile("Content/Sprites/alchemist.png", () => PixelArtGenerator.CreateAlchemistTexture(GraphicsDevice));
+        _forgeTexture = LoadTextureFromFile("Content/Sprites/anvil.png", () => PixelArtGenerator.CreateFurnaceTexture(GraphicsDevice));
     }
 
     private Texture2D LoadTextureFromFile(string relativePath, Func<Texture2D> fallbackGenerator)
@@ -237,12 +289,12 @@ public class Game1 : Game
             }
             else
             {
-                Console.WriteLine($"[Đồ Họa] File không tồn tại: {absolutePath}. Sử dụng tạo tự động.");
+                Console.WriteLine($"[Đồ Họa] File không tồn tại: {absolutePath}. Sử dụng hình vẽ thủ tục.");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Đồ Họa] Không thể tải {relativePath}: {ex.Message}. Sử dụng tạo tự động.");
+            Console.WriteLine($"[Đồ Họa] Không thể tải {relativePath}: {ex.Message}. Sử dụng hình vẽ thủ tục.");
         }
         return fallbackGenerator();
     }
@@ -263,21 +315,21 @@ public class Game1 : Game
         // Cập nhật chuyển động người chơi
         UpdatePlayerMovement(currentKeyState, deltaTime);
 
-        Vector2 playerPos = new Vector2(_player.PositionX, _player.PositionY);
+        Vector2 playerPos = _player.Position;
 
-        // Cập nhật Camera bám theo nhân vật một cách mượt mà (Lerp)
+        // Camera bám theo nhân vật mượt mà (Lerp)
         Vector2 targetCamera = new Vector2(_player.PositionX - 400f, _player.PositionY - 300f);
         _cameraPosition = Vector2.Lerp(_cameraPosition, targetCamera, 0.1f);
         _cameraPosition.X = Math.Clamp(_cameraPosition.X, 0f, MAP_WIDTH - 800f);
         _cameraPosition.Y = Math.Clamp(_cameraPosition.Y, 0f, MAP_HEIGHT - 600f);
 
-        // 1. Cập nhật Hồn Thú tự động tiến hóa theo tuổi thọ (1s thực = 24 phút game)
+        // 1. Yêu Thú tự động tiến hóa theo tuổi thọ
         for (int i = _monsters.Count - 1; i >= 0; i--)
         {
-            _monsters[i].UpdateEvolution(deltaTime, 1440f, playerPos);
+            _monsters[i].UpdateEvolution(deltaTime, GameTimeManager.TIME_SCALE, playerPos);
         }
 
-        // 1.5. Boss Territorial Aura (Uy Áp) fear logic on low-level monsters
+        // 1.5. Uy áp của Yêu Vương (>= 10.000 năm) khiến Yêu Thú yếu (< 1.000 năm) hoảng sợ bỏ chạy
         var bosses = _monsters.Where(m => m.Active && m.Age >= 10000).ToList();
         foreach (var m in _monsters)
         {
@@ -290,61 +342,37 @@ public class Game1 : Game
             }
         }
 
-        // 2. Cập nhật hoạt động của Bệ Phóng Ám Khí tự động
-        foreach (var launcher in _launchers)
+        // 2. Trận Pháp tự động công kích
+        foreach (var formation in _formations)
         {
-            float oldCd = launcher.CooldownTimer;
-            launcher.Update(deltaTime, _monsters, _projectilePool);
-            // Kích nổ hạt cơ quan xẹt lửa và rung màn nhẹ khi bệ phóng khai hỏa
-            if (launcher.CooldownTimer > oldCd)
+            float oldCd = formation.CooldownTimer;
+            formation.Update(deltaTime, _monsters, _projectilePool);
+            if (formation.CooldownTimer > oldCd)
             {
-                SpawnElementalBurst(launcher.Position, Element.None, 8);
+                SpawnElementalBurst(formation.Position, Element.None, 8);
                 TriggerShake(0.08f, 1.5f);
             }
         }
 
-        // Cập nhật spawners và dropped items
-        _oscarSpawner.Update(deltaTime);
-        _anvilSpawner.Update(deltaTime);
+        // Cập nhật spawners và vật phẩm rơi
+        _alchemistSpawner.Update(deltaTime);
+        _forgeSpawner.Update(deltaTime);
 
         for (int i = _droppedItems.Count - 1; i >= 0; i--)
         {
             var item = _droppedItems[i];
             item.Update(deltaTime);
 
-            if (Vector2.Distance(playerPos, item.Position) <= 25f)
+            if (Vector2.Distance(playerPos, item.Position) <= 25f && AddItemById(item.ItemId, item.Quantity))
             {
-                bool pickedUp = false;
-                if (item.Type == "CONSUMABLE")
-                {
-                    var data = _consumables.FirstOrDefault(c => c.ItemId == item.ItemId);
-                    if (data != null)
-                    {
-                        _player.Inventory.AddConsumable(data, item.Quantity);
-                        pickedUp = true;
-                    }
-                }
-                else if (item.Type == "HIDDEN_WEAPON")
-                {
-                    var data = _hiddenWeapons.FirstOrDefault(w => w.ItemId == item.ItemId);
-                    if (data != null)
-                    {
-                        _player.Inventory.AddHiddenWeapon(data, item.Quantity);
-                        pickedUp = true;
-                    }
-                }
-
-                if (pickedUp)
-                {
-                    string nameHUD = GetHUDItemName(item.ItemId);
-                    _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 25), $"+ {nameHUD} ({item.Quantity})", Color.LimeGreen));
-                    _droppedItems.RemoveAt(i);
-                }
+                _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 25), $"+ {GetItemName(item.ItemId)} ({item.Quantity})", Color.LimeGreen));
+                _droppedItems.RemoveAt(i);
             }
         }
 
-        // Tích lũy sát thương va chạm quái vật (Contact damage 8 HP/sec)
-        if (_player.Cultivation.CurrentState != CultivationState.Dead && _player.Cultivation.CurrentState != CultivationState.AbsorbingRing)
+        // Sát thương va chạm Yêu Thú (4 HP mỗi 0.5 giây cho mỗi con)
+        var state = _player.Cultivation.CurrentState;
+        if (state != CultivationState.Dead && state != CultivationState.Breakthrough)
         {
             _contactDamageTimer += deltaTime;
             if (_contactDamageTimer >= 0.5f)
@@ -365,18 +393,13 @@ public class Game1 : Game
             }
         }
 
-        // Cập nhật hệ thống hạt (Particles) & Rung màn hình (Screenshake)
+        // Hệ thống hạt, rung màn hình, lôi kiếp
         UpdateParticles(deltaTime);
         UpdateScreenshake(deltaTime);
         UpdateProjectileTrails();
         UpdateMeditationVFX();
-        UpdateAbsorptionVFX();
-
-        // Cập nhật Hồn Hoàn rơi
-        foreach (var ring in _soulRings)
-        {
-            ring.Update(gameTime);
-        }
+        UpdateBreakthroughVFX();
+        UpdateLightningStrikes(deltaTime);
 
         // Cập nhật chữ nổi
         for (int i = _floatingTexts.Count - 1; i >= 0; i--)
@@ -412,24 +435,20 @@ public class Game1 : Game
         // Ma trận camera + màn hình rung
         Matrix worldTransform = Matrix.CreateTranslation(-_cameraPosition.X + shakeOffset.X, -_cameraPosition.Y + shakeOffset.Y, 0);
 
-        float gameTimeForDraw = (float)gameTime.TotalGameTime.TotalSeconds;
+        float time = (float)gameTime.TotalGameTime.TotalSeconds;
+        Vector2 ringOrigin = new Vector2(_ringTexture.Width / 2f, _ringTexture.Height / 2f);
 
         // ====================================================================
         // PASS 1: RENDER WORLD SPRITES (PointClamp để giữ pixel art sắc nét)
         // ====================================================================
         _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp, null, null, null, worldTransform);
 
-        // 0. Vẽ Nền Đất Tiled Background cao cấp
+        // 0. Nền đất lát gạch
         int tileSize = 64;
-        int startTileX = (int)(_cameraPosition.X / tileSize) - 1;
-        int startTileY = (int)(_cameraPosition.Y / tileSize) - 1;
-        int endTileX = (int)((_cameraPosition.X + 800f) / tileSize) + 1;
-        int endTileY = (int)((_cameraPosition.Y + 600f) / tileSize) + 1;
-
-        startTileX = Math.Max(0, startTileX);
-        startTileY = Math.Max(0, startTileY);
-        endTileX = Math.Min((int)(MAP_WIDTH / tileSize), endTileX);
-        endTileY = Math.Min((int)(MAP_HEIGHT / tileSize), endTileY);
+        int startTileX = Math.Max(0, (int)(_cameraPosition.X / tileSize) - 1);
+        int startTileY = Math.Max(0, (int)(_cameraPosition.Y / tileSize) - 1);
+        int endTileX = Math.Min((int)(MAP_WIDTH / tileSize), (int)((_cameraPosition.X + 800f) / tileSize) + 1);
+        int endTileY = Math.Min((int)(MAP_HEIGHT / tileSize), (int)((_cameraPosition.Y + 600f) / tileSize) + 1);
 
         for (int tx = startTileX; tx <= endTileX; tx++)
         {
@@ -443,159 +462,145 @@ public class Game1 : Game
                 DrawRect(tx * tileSize, ty * tileSize, tileSize, 1, new Color(28, 33, 52) * 0.4f);
                 DrawRect(tx * tileSize, ty * tileSize, 1, tileSize, new Color(28, 33, 52) * 0.4f);
 
-                // Các vì sao tinh tú/linh khí phát sáng ngẫu nhiên định sẵn
+                // Linh khí phát sáng ngẫu nhiên định sẵn
                 int hash = (tx * 17 + ty * 31) % 100;
                 if (hash < 12)
                 {
                     int starOffset = (tx * 7 + ty * 13) % (tileSize - 20) + 10;
                     Vector2 starPos = new Vector2(tx * tileSize + starOffset, ty * tileSize + starOffset);
-                    Color starColor = (hash % 3 == 0) ? Color.Cyan * 0.25f : 
+                    Color starColor = (hash % 3 == 0) ? Color.Cyan * 0.25f :
                                       (hash % 3 == 1) ? Color.Gold * 0.2f : Color.MediumPurple * 0.25f;
                     _spriteBatch.Draw(_pixelTexture, new Rectangle((int)starPos.X, (int)starPos.Y, 2, 2), starColor);
                 }
             }
         }
 
-        // 1. Vẽ Hồn Hoàn dưới đất
-        foreach (var ring in _soulRings)
+        // 1. Vòng báo hiệu lôi kiếp dưới đất
+        foreach (var strike in _lightningStrikes)
         {
-            if (ring.Active)
-            {
-                float ringScaleFactor = 64f / _ringTexture.Width;
-                float scale = (0.5f + 0.08f * (float)Math.Sin(ring.PulseTimer * 5f)) * ringScaleFactor;
-                float rotation = ring.PulseTimer * 0.7f;
-                Vector2 ringOrigin = new Vector2(_ringTexture.Width / 2f, _ringTexture.Height / 2f);
-                _spriteBatch.Draw(_ringTexture, ring.Position, null, ring.GetColor() * 0.8f,
-                                  rotation, ringOrigin, scale, SpriteEffects.None, 0f);
-            }
+            if (strike.Landed) continue;
+            float progress = 1f - Math.Clamp(strike.Delay / CultivationComponent.LIGHTNING_STRIKE_DELAY, 0f, 1f);
+            _spriteBatch.Draw(_ringTexture, strike.Position, null, Color.Red * (0.25f + 0.55f * progress),
+                              0f, ringOrigin, strike.Radius / ringOrigin.X, SpriteEffects.None, 0f);
         }
 
-        // 1.5. Vẽ NPC Oscar và Anvil bằng các model .png xianxia premium mới
-        // Oscar NPC
-        Vector2 oscarPos = new Vector2(250, 380);
-        Vector2 oscarOrigin = new Vector2(_oscarTexture.Width / 2f, _oscarTexture.Height / 2f);
-        float oscarScale = 32f / _oscarTexture.Width;
-        _spriteBatch.Draw(_oscarTexture, oscarPos, null, Color.White, 0f, oscarOrigin, 1.5f * oscarScale, SpriteEffects.None, 0f);
+        // 1.5. NPC Đan Sư và Lò Luyện
+        Vector2 alchemistOrigin = new Vector2(_alchemistTexture.Width / 2f, _alchemistTexture.Height / 2f);
+        float alchemistScale = 32f / _alchemistTexture.Width;
+        _spriteBatch.Draw(_alchemistTexture, AlchemistPosition, null, Color.White, 0f, alchemistOrigin, 1.5f * alchemistScale, SpriteEffects.None, 0f);
 
-        // Anvil Spawner
-        Vector2 anvilPos = new Vector2(550, 380);
-        Vector2 anvilOrigin = new Vector2(_anvilTexture.Width / 2f, _anvilTexture.Height / 2f);
-        float anvilScale = 32f / _anvilTexture.Width;
-        _spriteBatch.Draw(_anvilTexture, anvilPos, null, Color.White, 0f, anvilOrigin, 1.5f * anvilScale, SpriteEffects.None, 0f);
+        Vector2 forgeOrigin = new Vector2(_forgeTexture.Width / 2f, _forgeTexture.Height / 2f);
+        float forgeScale = 32f / _forgeTexture.Width;
+        _spriteBatch.Draw(_forgeTexture, ForgePosition, null, Color.White, 0f, forgeOrigin, 1.5f * forgeScale, SpriteEffects.None, 0f);
 
-        // 2. Vẽ các Dropped Item (chỉ phần hình ảnh)
+        // 2. Vật phẩm rơi (chỉ phần hình ảnh)
         foreach (var item in _droppedItems)
         {
-            if (item.Active)
-            {
-                Texture2D tex = item.ItemId == "food_huong_trang_01" ? _sausageTexture : _needleTexture;
-                float hoverY = (float)Math.Sin(item.HoverTimer * 4f) * 3f;
-                Vector2 drawPos = new Vector2(item.Position.X, item.Position.Y + hoverY);
-                Vector2 itemOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
-                float itemScaleFactor = (item.ItemId == "food_huong_trang_01" ? 16f : 8f) / tex.Width;
-                _spriteBatch.Draw(tex, drawPos, null, Color.White, 0f, itemOrigin, 1.5f * itemScaleFactor, SpriteEffects.None, 0f);
-            }
+            if (!item.Active) continue;
+            Texture2D tex = GetItemIcon(item.ItemId, out Color tint);
+            float hoverY = (float)Math.Sin(item.HoverTimer * 4f) * 3f;
+            Vector2 drawPos = new Vector2(item.Position.X, item.Position.Y + hoverY);
+            Vector2 itemOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
+            float itemSize = item.Type == InventoryComponent.TYPE_MAGIC_WEAPON ? 8f : 16f;
+            _spriteBatch.Draw(tex, drawPos, null, tint, 0f, itemOrigin, 1.5f * itemSize / tex.Width, SpriteEffects.None, 0f);
         }
 
-        // 3. Vẽ các Bệ Phóng Ám Khí tự động xuống đất (chỉ phần hình ảnh + vòng quét)
-        foreach (var launcher in _launchers)
+        // 3. Trận Pháp (Trận Kỳ + vòng phạm vi)
+        foreach (var formation in _formations)
         {
-            if (launcher.Active)
+            if (!formation.Active) continue;
+
+            float recoil = 1.0f;
+            if (formation.CooldownTimer > formation.FireRate - 0.2f)
             {
-                float recoil = 1.0f;
-                if (launcher.CooldownTimer > launcher.FireRate - 0.2f)
-                {
-                    float t = (launcher.CooldownTimer - (launcher.FireRate - 0.2f)) / 0.2f;
-                    recoil = 1.0f - 0.25f * t;
-                }
-
-                Vector2 origin = new Vector2(_turretTexture.Width / 2f, _turretTexture.Height / 2f);
-                float turretScaleFactor = 24f / _turretTexture.Width;
-                Vector2 drawScale = new Vector2(1.5f * turretScaleFactor, 1.5f * recoil * turretScaleFactor);
-
-                _spriteBatch.Draw(_turretTexture, launcher.Position, null, Color.White, 0f, 
-                                  origin, drawScale, SpriteEffects.None, 0f);
-                
-                Vector2 ringOrigin = new Vector2(_ringTexture.Width / 2f, _ringTexture.Height / 2f);
-                _spriteBatch.Draw(_ringTexture, launcher.Position, null, Color.White * 0.15f, 
-                                  0f, ringOrigin, launcher.Range / (ringOrigin.X), SpriteEffects.None, 0f);
+                float t = (formation.CooldownTimer - (formation.FireRate - 0.2f)) / 0.2f;
+                recoil = 1.0f - 0.25f * t;
             }
+
+            Vector2 origin = new Vector2(_formationTexture.Width / 2f, _formationTexture.Height / 2f);
+            float flagScale = 24f / _formationTexture.Width;
+            Vector2 drawScale = new Vector2(1.5f * flagScale, 1.5f * recoil * flagScale);
+
+            _spriteBatch.Draw(_formationTexture, formation.Position, null, Color.White, 0f,
+                              origin, drawScale, SpriteEffects.None, 0f);
+
+            _spriteBatch.Draw(_ringTexture, formation.Position, null, Color.White * 0.15f,
+                              0f, ringOrigin, formation.Range / ringOrigin.X, SpriteEffects.None, 0f);
         }
 
-        // 4. Vẽ Hồn Thú (chỉ hình ảnh + vòng hào quang)
+        // 4. Yêu Thú (hình ảnh + uy áp)
         foreach (var monster in _monsters)
         {
-            if (monster.Active)
+            if (!monster.Active) continue;
+
+            Texture2D tex = monster.Element switch
             {
-                Texture2D tex = monster.Element switch
-                {
-                    Element.Wood => _monsterPlantTexture,
-                    Element.Fire => _monsterFireTexture,
-                    Element.Ice => _monsterIceTexture,
-                    _ => _monsterPlantTexture
-                };
-                
-                Vector2 monsterOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
-                float scale = (monster.Radius / (tex.Width / 2f)) * 1.2f;
+                Element.Wood => _monsterPlantTexture,
+                Element.Fire => _monsterFireTexture,
+                Element.Ice => _monsterIceTexture,
+                _ => _monsterPlantTexture
+            };
 
-                Color drawColor = Color.White;
-                if (monster.Age >= 100000)
-                {
-                    drawColor = Color.Red;
-                }
+            Vector2 monsterOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
+            float scale = (monster.Radius / (tex.Width / 2f)) * 1.2f;
+            Color drawColor = monster.Age >= 100000 ? Color.Red : Color.White;
 
-                _spriteBatch.Draw(tex, monster.Position, null, drawColor, 0f, 
-                                  monsterOrigin, scale, SpriteEffects.None, 0f);
+            _spriteBatch.Draw(tex, monster.Position, null, drawColor, 0f,
+                              monsterOrigin, scale, SpriteEffects.None, 0f);
 
-                if (monster.Age >= 10000)
-                {
-                    Color auraColor = monster.Age >= 100000 ? Color.Red * 0.15f : Color.Purple * 0.12f;
-                    Vector2 ringOrigin = new Vector2(_ringTexture.Width / 2f, _ringTexture.Height / 2f);
-                    _spriteBatch.Draw(_ringTexture, monster.Position, null, auraColor, 
-                                      0f, ringOrigin, 150f / (ringOrigin.X), SpriteEffects.None, 0f);
-                }
+            if (monster.Age >= 10000)
+            {
+                Color auraColor = monster.Age >= 100000 ? Color.Red * 0.15f : Color.Purple * 0.12f;
+                _spriteBatch.Draw(_ringTexture, monster.Position, null, auraColor,
+                                  0f, ringOrigin, 150f / ringOrigin.X, SpriteEffects.None, 0f);
             }
         }
 
-        // 5. Vẽ đạn ám khí (chỉ phần hình ảnh)
+        // 5. Phi kiếm / pháp thuật đang bay
         foreach (var proj in _projectilePool.Projectiles)
         {
-            if (proj.Active)
-            {
-                Texture2D tex = proj.Element == Element.Fire ? _boltTexture : _needleTexture;
-                Color bulletColor = proj.Element == Element.None ? Color.LightGray : Color.White;
-                float rotation = (float)Math.Atan2(proj.Velocity.Y, proj.Velocity.X);
-                Vector2 projOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
-                float projScaleFactor = 8f / tex.Width;
-                
-                _spriteBatch.Draw(tex, proj.Position, null, bulletColor, rotation, 
-                                  projOrigin, 1.5f * projScaleFactor, SpriteEffects.None, 0f);
-            }
+            if (!proj.Active) continue;
+
+            Texture2D tex = proj.Element == Element.Fire ? _boltTexture : _needleTexture;
+            Color bulletColor = proj.Element == Element.None ? Color.LightGray : Color.White;
+            float rotation = (float)Math.Atan2(proj.Velocity.Y, proj.Velocity.X);
+            Vector2 projOrigin = new Vector2(tex.Width / 2f, tex.Height / 2f);
+            float projScaleFactor = 8f / tex.Width;
+
+            _spriteBatch.Draw(tex, proj.Position, null, bulletColor, rotation,
+                              projOrigin, 1.5f * projScaleFactor, SpriteEffects.None, 0f);
         }
 
-        // 6. Vẽ Player (chỉ phần hình ảnh)
+        // 6. Player
+        Vector2 playerOrigin = new Vector2(_playerTexture.Width / 2f, _playerTexture.Height / 2f);
+        float playerScaleFactor = 32f / _playerTexture.Width;
         if (_player.Cultivation.CurrentState != CultivationState.Dead)
         {
             float hover = 0f;
             if (_player.Cultivation.CurrentState == CultivationState.Meditating)
             {
-                hover = (float)Math.Sin(gameTimeForDraw * 0.15f) * 4f;
+                hover = (float)Math.Sin(time * 2f) * 4f;
             }
 
-            Vector2 playerOrigin = new Vector2(_playerTexture.Width / 2f, _playerTexture.Height / 2f);
-            float playerScaleFactor = 32f / _playerTexture.Width;
-            _spriteBatch.Draw(_playerTexture, new Vector2(_player.PositionX, _player.PositionY + hover), null, Color.White, 0f, 
+            _spriteBatch.Draw(_playerTexture, new Vector2(_player.PositionX, _player.PositionY + hover), null, Color.White, 0f,
                               playerOrigin, 1.5f * playerScaleFactor, SpriteEffects.None, 0f);
         }
         else
         {
-            Vector2 playerOrigin = new Vector2(_playerTexture.Width / 2f, _playerTexture.Height / 2f);
-            float playerScaleFactor = 32f / _playerTexture.Width;
-            _spriteBatch.Draw(_playerTexture, new Vector2(_player.PositionX, _player.PositionY), null, Color.DimGray, (float)Math.PI / 2f, 
+            _spriteBatch.Draw(_playerTexture, _player.Position, null, Color.DimGray, (float)Math.PI / 2f,
                               playerOrigin, 1.5f * playerScaleFactor, SpriteEffects.None, 0f);
         }
 
-        // 7. Vẽ các hạt năng lượng (Particles)
+        // 7. Tia sét đã giáng xuống
+        foreach (var strike in _lightningStrikes)
+        {
+            if (strike.Landed && strike.FlashTimer > 0f)
+            {
+                DrawLightningBolt(strike);
+            }
+        }
+
+        // 8. Hạt năng lượng (Particles)
         foreach (var p in _particles)
         {
             float alpha = 1f - (p.Elapsed / p.Lifetime);
@@ -606,73 +611,57 @@ public class Game1 : Game
         _spriteBatch.End();
 
         // ====================================================================
-        // PASS 2: RENDER WORLD UI/TEXT/BARS (LinearClamp để chữ KHÔNG bị nhòe/mất dòng)
+        // PASS 2: RENDER WORLD UI/TEXT/BARS (LinearClamp để chữ KHÔNG bị nhòe)
         // ====================================================================
         _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, null, null, null, worldTransform);
 
-        // Nhãn tên NPC Oscar & Anvil
-        _spriteBatch.DrawString(_font, "Oscar", oscarPos - new Vector2(18, _oscarTexture.Height * 1.5f * oscarScale / 2f + 15f), Color.Pink, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
-        _spriteBatch.DrawString(_font, "Anvil", anvilPos - new Vector2(16, _anvilTexture.Height * 1.5f * anvilScale / 2f + 15f), Color.LightGray, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
+        DrawCenteredText("Đan Sư", AlchemistPosition - new Vector2(0, _alchemistTexture.Height * 1.5f * alchemistScale / 2f + 15f), Color.Plum, 0.7f);
+        DrawCenteredText("Lò Luyện", ForgePosition - new Vector2(0, _forgeTexture.Height * 1.5f * forgeScale / 2f + 15f), Color.LightGray, 0.7f);
 
-        if (!_isCraftingOpen && Vector2.Distance(_player.Position, anvilPos) <= 60f)
+        if (!_isCraftingOpen && Vector2.Distance(_player.Position, ForgePosition) <= 60f)
         {
-            string prompt = "Nhan [C] de Che tao Am khi";
-            Vector2 promptSz = _font.MeasureString(prompt) * 0.65f;
-            _spriteBatch.DrawString(_font, prompt, anvilPos - new Vector2(promptSz.X / 2f, _anvilTexture.Height * 1.5f * anvilScale / 2f + 35f), 
-                                   Color.Gold, 0f, Vector2.Zero, 0.65f, SpriteEffects.None, 0f);
+            DrawCenteredText("Nhấn [C] để Luyện Đan / Luyện Khí", ForgePosition - new Vector2(0, _forgeTexture.Height * 1.5f * forgeScale / 2f + 35f), Color.Gold, 0.65f);
         }
 
-        // Nhãn tên Dropped Item
+        // Nhãn tên vật phẩm rơi
         foreach (var item in _droppedItems)
         {
-            if (item.Active)
-            {
-                Texture2D tex = item.ItemId == "food_huong_trang_01" ? _sausageTexture : _needleTexture;
-                float hoverY = (float)Math.Sin(item.HoverTimer * 4f) * 3f;
-                Vector2 drawPos = new Vector2(item.Position.X, item.Position.Y + hoverY);
-                _spriteBatch.DrawString(_font, item.Name, drawPos - new Vector2(20, 15), Color.White * 0.8f, 0f, Vector2.Zero, 0.6f, SpriteEffects.None, 0f);
-            }
+            if (!item.Active) continue;
+            float hoverY = (float)Math.Sin(item.HoverTimer * 4f) * 3f;
+            DrawCenteredText(item.Name, new Vector2(item.Position.X, item.Position.Y + hoverY - 18), Color.White * 0.8f, 0.6f);
         }
 
-        // Thông tin đạn bệ phóng
-        foreach (var launcher in _launchers)
+        // Linh lực còn lại của Trận Pháp
+        foreach (var formation in _formations)
         {
-            if (launcher.Active)
-            {
-                string ammoText = launcher.AmmoCount <= 0 ? "EMPTY" : $"{launcher.AmmoCount}/{launcher.MaxAmmo}";
-                Color ammoColor = launcher.AmmoCount <= 0 ? Color.Red : Color.LimeGreen;
-                Vector2 textSz = _font.MeasureString(ammoText) * 0.6f;
-                _spriteBatch.DrawString(_font, ammoText, launcher.Position - new Vector2(textSz.X / 2f, 25f), 
-                                        ammoColor, 0f, Vector2.Zero, 0.6f, SpriteEffects.None, 0f);
-            }
+            if (!formation.Active) continue;
+            string chargeText = formation.AmmoCount <= 0 ? "Cạn linh lực" : $"{formation.AmmoCount}/{formation.MaxAmmo}";
+            Color chargeColor = formation.AmmoCount <= 0 ? Color.Red : Color.LimeGreen;
+            DrawCenteredText(chargeText, formation.Position - new Vector2(0, 25f), chargeColor, 0.6f);
         }
 
-        // Nhãn HP bar & tên Hồn Thú
+        // Thanh máu & tên Yêu Thú
         foreach (var monster in _monsters)
         {
-            if (monster.Active)
-            {
-                int hpBarW = (int)(monster.Radius * 1.8f);
-                int hpBarH = 4;
-                int hpX = (int)monster.Position.X - hpBarW / 2;
-                int hpY = (int)monster.Position.Y - (int)(monster.Radius + 6);
-                float hpRatio = monster.HP / monster.MaxHP;
+            if (!monster.Active) continue;
 
-                DrawRect(hpX, hpY, hpBarW, hpBarH, Color.Black);
-                DrawRect(hpX, hpY, (int)(hpBarW * hpRatio), hpBarH, Color.Red);
-                
-                string rankName = monster.Name;
-                Vector2 labelSize = _font.MeasureString(rankName) * 0.7f;
-                _spriteBatch.DrawString(_font, rankName, new Vector2(monster.Position.X - labelSize.X / 2f, hpY - 14), 
-                                        Color.Yellow, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
-            }
+            int hpBarW = (int)(monster.Radius * 1.8f);
+            int hpBarH = 4;
+            int hpX = (int)monster.Position.X - hpBarW / 2;
+            int hpY = (int)monster.Position.Y - (int)(monster.Radius + 6);
+            float hpRatio = monster.HP / monster.MaxHP;
+
+            DrawRect(hpX, hpY, hpBarW, hpBarH, Color.Black);
+            DrawRect(hpX, hpY, (int)(hpBarW * hpRatio), hpBarH, Color.Red);
+
+            DrawCenteredText(monster.Name, new Vector2(monster.Position.X, hpY - 14), Color.Yellow, 0.7f);
         }
 
-        // Floating texts (Damage numbers, Exp popups)
+        // Chữ nổi (sát thương, thông báo)
         foreach (var ft in _floatingTexts)
         {
             float alpha = 1f - (ft.Elapsed / ft.Lifetime);
-            _spriteBatch.DrawString(_font, ft.Text, ft.Position, ft.Color * alpha, 
+            _spriteBatch.DrawString(_font, ft.Text, ft.Position, ft.Color * alpha,
                                     0f, Vector2.Zero, ft.Scale, SpriteEffects.None, 0f);
         }
 
@@ -683,10 +672,8 @@ public class Game1 : Game
         // ====================================================================
         _spriteBatch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, null, null, null, null);
 
-        // Vẽ HUD góc trên trái
-        DrawHUD();
+        DrawHUD(time);
 
-        // Vẽ túi đồ nếu đang mở
         if (_isInventoryOpen)
         {
             DrawInventoryUI();
@@ -708,8 +695,11 @@ public class Game1 : Game
 
     private void UpdatePlayerMovement(KeyboardState keys, float deltaTime)
     {
-        if (_player.Cultivation.CurrentState == CultivationState.Dead || 
-            _player.Cultivation.CurrentState == CultivationState.AbsorbingRing)
+        var cult = _player.Cultivation;
+        // Khi độ Thiên Kiếp vẫn được di chuyển để né lôi; xung quan thì phải ngồi yên
+        bool dodgingTribulation = cult.CurrentState == CultivationState.Breakthrough && cult.IsHeavenlyTribulation;
+        if (cult.CurrentState == CultivationState.Dead ||
+            (cult.CurrentState == CultivationState.Breakthrough && !dodgingTribulation))
             return;
 
         float speed = 180f;
@@ -729,7 +719,7 @@ public class Game1 : Game
             _player.PositionX = Math.Clamp(_player.PositionX, 16f, MAP_WIDTH - 16f);
             _player.PositionY = Math.Clamp(_player.PositionY, 16f, MAP_HEIGHT - 16f);
 
-            // Thêm bụi di chuyển chân người chơi
+            // Bụi di chuyển dưới chân
             if (_random.NextDouble() < 0.15)
             {
                 var dustPos = new Vector2(_player.PositionX + _random.Next(-6, 6), _player.PositionY + 12);
@@ -742,557 +732,447 @@ public class Game1 : Game
     private void HandleInput(KeyboardState keys, MouseState mouse)
     {
         Vector2 mouseWorldPos = mouse.Position.ToVector2() + _cameraPosition;
+        var cult = _player.Cultivation;
 
+        // --- [M] Đả Tọa ---
         if (IsKeyJustPressed(keys, Keys.M))
         {
-            var cult = _player.Cultivation;
             if (cult.CurrentState == CultivationState.Meditating)
                 cult.StopMeditating();
             else
                 cult.StartMeditating();
         }
 
+        // --- [Space] Ổn định đạo tâm khi đột phá / cheat +500 tu vi ---
         if (IsKeyJustPressed(keys, Keys.Space))
         {
-            if (_player.Cultivation.CurrentState == CultivationState.AbsorbingRing)
+            if (cult.CurrentState == CultivationState.Breakthrough)
             {
-                _player.Cultivation.QTEPressCount++;
-                SpawnElementalBurst(new Vector2(_player.PositionX, _player.PositionY), Element.None, 5);
+                cult.QTEPressCount++;
+                SpawnElementalBurst(_player.Position, Element.None, 5);
             }
-            else
+            else if (cult.AddExp(500f))
             {
-                _player.Cultivation.AddExp(500f);
-                _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "+500 EXP (Cheat)", Color.SkyBlue));
+                _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), "+500 Tu Vi (Cheat)", Color.SkyBlue));
             }
         }
 
         if (IsKeyJustPressed(keys, Keys.I))
         {
             _isInventoryOpen = !_isInventoryOpen;
-            Console.WriteLine($"[Giao Diện] Bật/Tắt túi đồ: " + (_isInventoryOpen ? "MỞ" : "ĐÓNG"));
         }
 
-        if (IsKeyJustPressed(keys, Keys.E))
+        if (IsKeyJustPressed(keys, Keys.Tab))
         {
             CycleEquippedWeapon();
         }
 
+        // --- [R] Đột phá bình cảnh ---
         if (IsKeyJustPressed(keys, Keys.R))
         {
-            TryAbsorbNearestSoulRing();
+            TryStartBreakthrough();
         }
 
-        // --- Bấm phím [C] để Mở/Đóng Giao diện Chế tạo tại Lò Rèn ---
+        // --- [C] Mở/Đóng Lò Luyện ---
         if (IsKeyJustPressed(keys, Keys.C))
         {
-            if (Vector2.Distance(_player.Position, _anvilSpawner.Position) <= 60f)
+            if (Vector2.Distance(_player.Position, ForgePosition) <= 60f)
             {
                 _isCraftingOpen = !_isCraftingOpen;
                 if (_isCraftingOpen) _isInventoryOpen = true;
-                Console.WriteLine($"[Lò Rèn] Bật/Tắt lò rèn Đường Môn: " + (_isCraftingOpen ? "MỞ" : "ĐÓNG"));
+                Console.WriteLine($"[Lò Luyện] " + (_isCraftingOpen ? "MỞ" : "ĐÓNG"));
             }
             else
             {
-                _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Lai gan Lo ren de su dung!", Color.OrangeRed));
+                _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 40), "Hãy lại gần Lò Luyện!", Color.OrangeRed));
             }
         }
 
-        // Tự động đóng lò rèn nếu đi quá xa
-        if (_isCraftingOpen && Vector2.Distance(_player.Position, _anvilSpawner.Position) > 75f)
+        // Tự động đóng Lò Luyện nếu đi quá xa
+        if (_isCraftingOpen && Vector2.Distance(_player.Position, ForgePosition) > 75f)
         {
             _isCraftingOpen = false;
-            Console.WriteLine("[Lò Rèn] Đã đóng Lò Rèn do đi quá xa!");
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Lo ren da dong (Qua xa)!", Color.OrangeRed));
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 40), "Đã rời Lò Luyện", Color.OrangeRed));
         }
 
-        // Điều khiển phím chọn công thức khi lò rèn mở
+        // Chọn công thức bằng F1-F4 khi Lò Luyện mở
         if (_isCraftingOpen)
         {
-            if (IsKeyJustPressed(keys, Keys.F1))
+            for (int i = 0; i < Math.Min(MAX_RECIPES_SHOWN, _recipes.Count); i++)
             {
-                _selectedRecipeIndex = 0;
-            }
-            if (IsKeyJustPressed(keys, Keys.F2))
-            {
-                _selectedRecipeIndex = 1;
+                if (IsKeyJustPressed(keys, Keys.F1 + i))
+                {
+                    _selectedRecipeIndex = i;
+                }
             }
         }
 
-        // --- Bấm phím [F5] để Lưu game vào MySQL ---
+        // --- [F5] Lưu game vào MySQL ---
         if (IsKeyJustPressed(keys, Keys.F5))
         {
             if (_dbManager.IsConnected)
             {
-                bool saved = _dbManager.SavePlayerState(_player, _monsters, _droppedItems, _launchers, _soulRings);
-                if (saved)
-                {
-                    _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Game Saved to MySQL!", Color.Lime, 2.0f, 1.1f));
-                }
-                else
-                {
-                    _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Save Failed!", Color.Red));
-                }
+                bool saved = _dbManager.SavePlayerState(_player, _monsters, _droppedItems, _formations);
+                _floatingTexts.Add(saved
+                    ? new FloatingText(_player.Position - new Vector2(0, 40), "Đã lưu game!", Color.Lime, 2.0f, 1.1f)
+                    : new FloatingText(_player.Position - new Vector2(0, 40), "Lưu thất bại!", Color.Red));
             }
             else
             {
-                _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "MySQL Offline - Cannot Save!", Color.OrangeRed));
+                _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 40), "MySQL offline - không thể lưu!", Color.OrangeRed));
             }
         }
 
-        // --- Bấm phím [F9] để Tải game từ MySQL ---
+        // --- [F9] Tải game từ MySQL ---
         if (IsKeyJustPressed(keys, Keys.F9))
         {
-            if (_dbManager.IsConnected)
-            {
-                string monstersJson, droppedItemsJson, launchersJson, soulRingsJson;
-                bool loaded = _dbManager.LoadPlayerState(_player, _dataLoader, out monstersJson, out droppedItemsJson, out launchersJson, out soulRingsJson);
-                if (loaded)
-                {
-                    // 1. Dọn dẹp thế giới hiện tại
-                    _monsters.Clear();
-                    _soulRings.Clear();
-                    _launchers.Clear();
-                    _droppedItems.Clear();
-                    _projectilePool.Clear();
-                    _particles.Clear();
-
-                    // 2. Phục hồi quái vật (Hồn thú)
-                    if (!string.IsNullOrEmpty(monstersJson))
-                    {
-                        try
-                        {
-                            var list = JsonSerializer.Deserialize<List<SavedMonsterData>>(monstersJson);
-                            if (list != null)
-                            {
-                                foreach (var data in list)
-                                {
-                                    if (Enum.TryParse<Element>(data.element, true, out var elem))
-                                    {
-                                        var m = new Monster(data.name, data.age, data.maxHp, new Vector2(data.x, data.y), elem);
-                                        m.HP = data.hp;
-                                        m.MaxHP = data.maxHp;
-                                        m.BaseMaxHP = data.maxHp / (1f + data.age / 1500f);
-                                        
-                                        // Gán lại sự kiện OnKilled
-                                        m.OnKilled += HandleMonsterKilled;
-                                        _monsters.Add(m);
-                                    }
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"[Lỗi Tải Game] Không thể phục hồi Hồn Thú: {ex.Message}");
-                        }
-                    }
-
-                    // 3. Phục hồi vật phẩm rơi
-                    if (!string.IsNullOrEmpty(droppedItemsJson))
-                    {
-                        try
-                        {
-                            var list = JsonSerializer.Deserialize<List<SavedDroppedItemData>>(droppedItemsJson);
-                            if (list != null)
-                            {
-                                foreach (var data in list)
-                                {
-                                    var item = new DroppedItem(new Vector2(data.x, data.y), data.itemId, data.name, data.type, data.quantity);
-                                    _droppedItems.Add(item);
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"[Lỗi Tải Game] Không thể phục hồi vật phẩm rơi: {ex.Message}");
-                        }
-                    }
-
-                    // 4. Phục hồi bệ phóng tự động (turrets)
-                    if (!string.IsNullOrEmpty(launchersJson))
-                    {
-                        try
-                        {
-                            var list = JsonSerializer.Deserialize<List<SavedLauncherData>>(launchersJson);
-                            if (list != null)
-                            {
-                                foreach (var data in list)
-                                {
-                                    var l = new AutoLauncher(new Vector2(data.x, data.y), data.type);
-                                    l.AmmoCount = data.ammo;
-                                    l.MaxAmmo = data.maxAmmo;
-                                    _launchers.Add(l);
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"[Lỗi Tải Game] Không thể phục hồi bệ phóng: {ex.Message}");
-                        }
-                    }
-
-                    // 5. Phục hồi hồn hoàn rơi trên đất
-                    if (!string.IsNullOrEmpty(soulRingsJson))
-                    {
-                        try
-                        {
-                            var list = JsonSerializer.Deserialize<List<SavedSoulRingData>>(soulRingsJson);
-                            if (list != null)
-                            {
-                                foreach (var data in list)
-                                {
-                                    if (Enum.TryParse<Element>(data.element, true, out var elem))
-                                    {
-                                        var r = new SoulRingEntity(new Vector2(data.x, data.y), data.age, elem);
-                                        _soulRings.Add(r);
-                                    }
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"[Lỗi Tải Game] Không thể phục hồi hồn hoàn: {ex.Message}");
-                        }
-                    }
-
-                    _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Game Loaded from MySQL!", Color.Cyan, 2.0f, 1.1f));
-                }
-                else
-                {
-                    _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Load Failed!", Color.Red));
-                }
-            }
-            else
-            {
-                _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "MySQL Offline - Cannot Load!", Color.OrangeRed));
-            }
+            LoadWorldFromDatabase();
         }
 
-        // --- Bấm phím [Q] để kích hoạt Hồn kỹ 1 ---
+        // --- [Q] / [E] Pháp Thuật ---
         if (IsKeyJustPressed(keys, Keys.Q))
         {
-            TriggerActiveSkill(1, mouseWorldPos);
+            TriggerTechnique(1, mouseWorldPos);
         }
 
-        // --- Bấm phím [W] để kích hoạt Hồn kỹ 2 ---
-        if (IsKeyJustPressed(keys, Keys.W))
+        if (IsKeyJustPressed(keys, Keys.E))
         {
-            TriggerActiveSkill(2, mouseWorldPos);
+            TriggerTechnique(2, mouseWorldPos);
         }
 
-        // --- Bấm phím [T] để đặt bệ phóng ám khí tự động (Auto-Turret) ---
+        // --- [T] Bày Trận Pháp ---
         if (IsKeyJustPressed(keys, Keys.T))
         {
-            PlaceAutoLauncher();
+            PlaceFormation();
         }
 
-        // --- Bấm phím [F] để reload bệ phóng ám khí gần nhất ---
+        // --- [F] Nạp Linh Thạch cho trận gần nhất ---
         if (IsKeyJustPressed(keys, Keys.F))
         {
-            TryReloadNearestTurret();
+            TryRechargeNearestFormation();
         }
 
-        // --- Bấm phím [Y] để chuyển đổi loại bệ phóng đặt tiếp theo ---
+        // --- [Y] Đổi loại trận bày tiếp theo ---
         if (IsKeyJustPressed(keys, Keys.Y))
         {
-            _nextTurretTypeToPlace = _nextTurretTypeToPlace % 3 + 1;
-            string turretName = _nextTurretTypeToPlace switch
-            {
-                1 => "Vo Thanh Tu Tien",
-                2 => "Chu Cat Than No",
-                3 => "Ham Sa Xa Anh",
-                _ => "Unknown"
-            };
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), $"Next Turret: {turretName}", Color.Gold));
-            Console.WriteLine($"[Cơ Quan] Chọn loại bệ phóng tiếp theo: {turretName}");
+            _nextFormationType = _nextFormationType % 3 + 1;
+            string formationName = FormationArray.GetFormationName(_nextFormationType);
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), $"Trận kế tiếp: {formationName}", Color.Gold));
+            Console.WriteLine($"[Trận Pháp] Chọn trận bày tiếp theo: {formationName}");
         }
 
-        // --- Bấm phím [U] để mở khóa Bát Chu Mâu lập tức ---
+        // --- [U] Cheat: thức tỉnh Vạn Độc Thể ---
         if (IsKeyJustPressed(keys, Keys.U))
         {
-            _player.Cultivation.UnlockBatChuMau();
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 40), "Bat Chu Mau Unlocked! (Cheat)", Color.Magenta));
+            cult.UnlockVanDocThe();
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 40), "Vạn Độc Thể (Cheat)", Color.Magenta));
         }
 
-        // --- Bấm phím [H] để tạo Hồn Hoàn 99k năm ---
-        if (IsKeyJustPressed(keys, Keys.H))
+        // --- [H] Cheat: nhận 3 Phá Cảnh Đan ---
+        if (IsKeyJustPressed(keys, Keys.H) && AddItemById("dan_pha_canh", 3))
         {
-            Vector2 playerPos = new Vector2(_player.PositionX, _player.PositionY);
-            var ring = new SoulRingEntity(playerPos, 99000, Element.Wood);
-            _soulRings.Add(ring);
-            _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 15), "Spawned 99k-year Ring! (Cheat)", Color.Yellow, 2f));
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 15), "+3 Phá Cảnh Đan (Cheat)", Color.Yellow, 2f));
         }
 
-        // Sử dụng phím tắt 1->5
+        // Phím tắt dùng vật phẩm 1->5
         for (int i = 0; i < 5; i++)
         {
-            Keys key = Keys.D1 + i;
-            if (IsKeyJustPressed(keys, key))
+            if (IsKeyJustPressed(keys, Keys.D1 + i))
             {
                 var items = _player.Inventory.Items;
                 if (i < items.Count)
                 {
                     string itemId = items[i].ItemId;
-                    string nameHUD = GetHUDItemName(itemId);
+                    string itemName = GetItemName(itemId);
                     bool success = _player.Inventory.UseItem(itemId, _player);
-                    if (success)
-                    {
-                        _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), $"Dung Vat Pham: {nameHUD}", Color.Lime));
-                    }
+                    _floatingTexts.Add(success
+                        ? new FloatingText(_player.Position - new Vector2(0, 30), $"Dùng: {itemName}", Color.Lime)
+                        : new FloatingText(_player.Position - new Vector2(0, 30), $"Không thể dùng {itemName}", Color.Gray));
                 }
             }
         }
 
-        // Click chuột trái bắn đạn thường hoặc chế tạo
+        // Chuột trái: phóng phi kiếm hoặc thao tác Lò Luyện
         if (mouse.LeftButton == ButtonState.Pressed && _previousMouseState.LeftButton == ButtonState.Released)
         {
             bool clickInInventory = _isInventoryOpen && mouse.X >= 510 && mouse.Y <= 520;
-            bool clickInCrafting = _isCraftingOpen && mouse.X >= 20 && mouse.X <= 320 && mouse.Y >= 15 && mouse.Y <= 520;
-            
+            bool clickInCrafting = _isCraftingOpen &&
+                                   mouse.X >= CRAFT_PANEL_X && mouse.X <= CRAFT_PANEL_X + CRAFT_PANEL_W &&
+                                   mouse.Y >= CRAFT_PANEL_Y && mouse.Y <= CRAFT_PANEL_Y + CRAFT_PANEL_H;
+
             if (clickInCrafting)
             {
-                // Click inside Slot 1: X: 35 -> 305, Y: 70 -> 230
-                if (mouse.X >= 35 && mouse.X <= 305 && mouse.Y >= 70 && mouse.Y <= 230)
-                {
-                    _selectedRecipeIndex = 0;
-                    Console.WriteLine("[Lò Rèn] Chọn chế tạo: Vô Thanh Tụ Tiễn");
-                }
-                // Click inside Slot 2: X: 35 -> 305, Y: 230 -> 390
-                else if (mouse.X >= 35 && mouse.X <= 305 && mouse.Y >= 230 && mouse.Y <= 390)
-                {
-                    _selectedRecipeIndex = 1;
-                    Console.WriteLine("[Lò Rèn] Chọn chế tạo: Chư Cát Thần Nỗ");
-                }
-                // Click inside Craft Button: X: 35 -> 305, Y: 420 -> 480
-                else if (mouse.X >= 35 && mouse.X <= 305 && mouse.Y >= 420 && mouse.Y <= 480)
-                {
-                    CraftRecipe(_selectedRecipeIndex);
-                }
+                HandleCraftingClick(mouse.X, mouse.Y);
             }
             else if (!clickInInventory &&
-                _player.Cultivation.CurrentState != CultivationState.Dead && 
-                _player.Cultivation.CurrentState != CultivationState.AbsorbingRing)
+                     cult.CurrentState != CultivationState.Dead &&
+                     cult.CurrentState != CultivationState.Breakthrough)
             {
                 FireActiveWeapon(mouseWorldPos);
             }
         }
 
-        // Click chuột phải spawn quái
+        // Chuột phải: gọi Yêu Thú
         if (mouse.RightButton == ButtonState.Pressed && _previousMouseState.RightButton == ButtonState.Released)
         {
             SpawnRandomMonster(mouseWorldPos);
         }
     }
 
-    // ====================================================================
-    // ADVANCED COMBAT & TURRETS IMPLEMENTATIONS
-    // ====================================================================
-
-    private void TriggerActiveSkill(int skillNumber, Vector2 targetPos)
+    private void LoadWorldFromDatabase()
     {
-        var cult = _player.Cultivation;
-        if (cult.CurrentState == CultivationState.Dead) return;
-
-        SoulSkill? skill = skillNumber == 1 ? cult.Skill1 : cult.Skill2;
-
-        if (skill == null)
+        if (!_dbManager.IsConnected)
         {
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 35), $"Hon ky {skillNumber} chua mo khoa!", Color.OrangeRed));
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 40), "MySQL offline - không thể tải!", Color.OrangeRed));
             return;
         }
 
-        // Kiểm tra Hồn Lực SP
-        if (cult.SoulPower < skill.SPCost)
+        bool loaded = _dbManager.LoadPlayerState(_player, _dataLoader, out string monstersJson, out string droppedItemsJson, out string formationsJson);
+        if (!loaded)
         {
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 35), "Khong du Hon luc (SP)!", Color.Red));
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 40), "Tải game thất bại!", Color.Red));
             return;
         }
 
-        // Tiêu hao SP và kích hoạt bắn đạn hồn kỹ đặc biệt
-        cult.ConsumeSoulPower(skill.SPCost);
-        CastSoulSkillProjectiles(skill, targetPos);
+        // 1. Dọn dẹp thế giới hiện tại
+        _monsters.Clear();
+        _formations.Clear();
+        _droppedItems.Clear();
+        _lightningStrikes.Clear();
+        _projectilePool.Clear();
+        _particles.Clear();
 
-        _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 55), $"Kich Hoat: {skill.Name}!", Color.YellowGreen, 1.5f, 1.2f));
+        // 2. Phục hồi Yêu Thú
+        if (!string.IsNullOrEmpty(monstersJson))
+        {
+            try
+            {
+                var list = JsonSerializer.Deserialize<List<SavedMonsterData>>(monstersJson);
+                if (list != null)
+                {
+                    foreach (var data in list)
+                    {
+                        if (Enum.TryParse<Element>(data.element, true, out var elem))
+                        {
+                            var m = new Monster(data.name, data.age, data.maxHp, new Vector2(data.x, data.y), elem);
+                            m.HP = data.hp;
+                            m.MaxHP = data.maxHp;
+                            m.BaseMaxHP = data.maxHp / (1f + data.age / 1500f);
+
+                            // Gán lại sự kiện OnKilled
+                            m.OnKilled += HandleMonsterKilled;
+                            _monsters.Add(m);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Lỗi Tải Game] Không thể phục hồi Yêu Thú: {ex.Message}");
+            }
+        }
+
+        // 3. Phục hồi vật phẩm rơi
+        if (!string.IsNullOrEmpty(droppedItemsJson))
+        {
+            try
+            {
+                var list = JsonSerializer.Deserialize<List<SavedDroppedItemData>>(droppedItemsJson);
+                if (list != null)
+                {
+                    foreach (var data in list)
+                    {
+                        _droppedItems.Add(new DroppedItem(new Vector2(data.x, data.y), data.itemId, data.name, data.type, data.quantity));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Lỗi Tải Game] Không thể phục hồi vật phẩm rơi: {ex.Message}");
+            }
+        }
+
+        // 4. Phục hồi Trận Pháp
+        if (!string.IsNullOrEmpty(formationsJson))
+        {
+            try
+            {
+                var list = JsonSerializer.Deserialize<List<SavedFormationData>>(formationsJson);
+                if (list != null)
+                {
+                    foreach (var data in list)
+                    {
+                        var f = new FormationArray(new Vector2(data.x, data.y), data.type);
+                        f.AmmoCount = data.ammo;
+                        f.MaxAmmo = data.maxAmmo;
+                        _formations.Add(f);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Lỗi Tải Game] Không thể phục hồi Trận Pháp: {ex.Message}");
+            }
+        }
+
+        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 40), "Đã tải game!", Color.Cyan, 2.0f, 1.1f));
     }
 
-    private void CastSoulSkillProjectiles(SoulSkill skill, Vector2 targetPos)
+    // ====================================================================
+    // PHÁP THUẬT, PHÁP KHÍ & TRẬN PHÁP
+    // ====================================================================
+
+    private void TriggerTechnique(int slot, Vector2 targetPos)
     {
-        Vector2 playerCenter = new Vector2(_player.PositionX, _player.PositionY);
-        Vector2 dir = targetPos - playerCenter;
+        var cult = _player.Cultivation;
+        if (cult.CurrentState == CultivationState.Dead || cult.CurrentState == CultivationState.Breakthrough) return;
+
+        TechniqueData? technique = slot == 1 ? cult.Skill1 : cult.Skill2;
+
+        if (technique == null)
+        {
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 35), $"Pháp thuật {slot} chưa lĩnh ngộ!", Color.OrangeRed));
+            return;
+        }
+
+        if (!cult.ConsumeSpiritPower(technique.SPCost))
+        {
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 35), "Không đủ Linh Lực!", Color.Red));
+            return;
+        }
+
+        CastTechnique(technique, targetPos);
+        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 55), $"{technique.Name}!", Color.YellowGreen, 1.5f, 1.2f));
+    }
+
+    /// <summary>
+    /// Phóng pháp thuật theo kiểu định nghĩa trong techniques.json:
+    /// "fan" (quạt đều), "barrage" (chuỗi liên tiếp lệch ngẫu nhiên), "nova" (tỏa tròn 360 độ).
+    /// </summary>
+    private void CastTechnique(TechniqueData technique, Vector2 targetPos)
+    {
+        Element element = ElementExtensions.ParseElement(technique.Element);
+        Vector2 center = _player.Position;
+        Vector2 dir = targetPos - center;
         if (dir == Vector2.Zero) dir = new Vector2(1, 0);
         else dir.Normalize();
 
         float baseAngle = (float)Math.Atan2(dir.Y, dir.X);
+        int count = Math.Max(1, technique.Count);
 
-        if (skill.Name == "Lam Ngan Quan Quanh")
+        switch (technique.Pattern)
         {
-            // Bắn 3 tia độc hệ Wood tốc độ cao sát thương 60
-            float spread = 0.15f;
-            float startAngle = baseAngle - spread;
-            for (int i = 0; i < 3; i++)
+            case "nova":
             {
-                float angle = startAngle + spread * i;
-                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
-                _projectilePool.Spawn(playerCenter, bulletDir, skill.Damage, 350f, 500f, Element.Wood);
+                float step = (float)(Math.PI * 2 / count);
+                for (int i = 0; i < count; i++)
+                {
+                    _projectilePool.Spawn(center, AngleToVector(step * i), technique.Damage, technique.Range, technique.Speed, element);
+                }
+                break;
             }
-        }
-        else if (skill.Name == "Phuong Hoang Hoa Tuyen")
-        {
-            // Bắn chùm lửa liên tiếp 8 phát (Fire) sát thương 100
-            for (int i = 0; i < 8; i++)
+
+            case "barrage":
             {
-                float angle = baseAngle + (float)(_random.NextDouble() - 0.5) * 0.08f;
-                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
-                Vector2 spawnOffset = bulletDir * (i * 8f);
-                _projectilePool.Spawn(playerCenter + spawnOffset, bulletDir, skill.Damage, 400f, 450f, Element.Fire);
+                for (int i = 0; i < count; i++)
+                {
+                    float angle = baseAngle + (float)(_random.NextDouble() - 0.5) * technique.Spread;
+                    Vector2 bulletDir = AngleToVector(angle);
+                    _projectilePool.Spawn(center + bulletDir * (i * technique.Spacing), bulletDir, technique.Damage, technique.Range, technique.Speed, element);
+                }
+                break;
             }
-        }
-        else if (skill.Name == "Bang Tam Ket Gioi")
-        {
-            // Tạo khiên băng bắn ra 12 tia xung quanh 360 độ (Ice) sát thương 80
-            float step = (float)(Math.PI * 2 / 12);
-            for (int i = 0; i < 12; i++)
+
+            default: // "fan"
             {
-                float angle = step * i;
-                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
-                _projectilePool.Spawn(playerCenter, bulletDir, skill.Damage, 250f, 300f, Element.Ice);
+                if (count == 1)
+                {
+                    _projectilePool.Spawn(center, dir, technique.Damage, technique.Range, technique.Speed, element);
+                    break;
+                }
+
+                float step = technique.Spread / (count - 1);
+                float startAngle = baseAngle - technique.Spread / 2f;
+                for (int i = 0; i < count; i++)
+                {
+                    _projectilePool.Spawn(center, AngleToVector(startAngle + step * i), technique.Damage, technique.Range, technique.Speed, element);
+                }
+                break;
             }
-        }
-        else if (skill.Name == "Lam Ngan Tu Lung")
-        {
-            // Mộc Hồn hoàn 2: Cùm trói diện rộng (5 tia bắn cực mạnh, sát thương 150)
-            float spread = 0.4f;
-            float step = spread / 4f;
-            float startAngle = baseAngle - spread / 2f;
-            for (int i = 0; i < 5; i++)
-            {
-                float angle = startAngle + step * i;
-                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
-                _projectilePool.Spawn(playerCenter, bulletDir, skill.Damage, 380f, 480f, Element.Wood);
-            }
-        }
-        else if (skill.Name == "Phuong Hoang Huyen Oa")
-        {
-            // Hỏa Hồn hoàn 2: Vòng xoáy lửa địa ngục (5 cầu lửa sát thương 200)
-            float spread = 0.5f;
-            float step = spread / 4f;
-            float startAngle = baseAngle - spread / 2f;
-            for (int i = 0; i < 5; i++)
-            {
-                float angle = startAngle + step * i;
-                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
-                _projectilePool.Spawn(playerCenter, bulletDir, skill.Damage, 300f, 360f, Element.Fire);
-            }
-        }
-        else if (skill.Name == "Huyen Bang Xung Kich")
-        {
-            // Băng Hồn hoàn 2: Sóng xung kích huyền băng (10 tia quạt rộng sát thương 160)
-            float spread = 0.7f;
-            float step = spread / 9f;
-            float startAngle = baseAngle - spread / 2f;
-            for (int i = 0; i < 10; i++)
-            {
-                float angle = startAngle + step * i;
-                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
-                _projectilePool.Spawn(playerCenter, bulletDir, skill.Damage, 320f, 420f, Element.Ice);
-            }
-        }
-        else
-        {
-            // Kỹ năng mặc định
-            _projectilePool.Spawn(playerCenter, dir, skill.Damage, 300f, 350f, skill.Element);
         }
 
-        Console.WriteLine($"[Hồn Kỹ] ⚡ Đường Tam thi triển: {skill.Name} (Sát thương: {skill.Damage}, Hồn lực: {skill.SPCost})");
+        Console.WriteLine($"[Pháp Thuật] ⚡ {_player.Name} thi triển: {technique.Name} (Sát thương: {technique.Damage}, Linh lực: {technique.SPCost})");
     }
 
-    private void PlaceAutoLauncher()
+    private static Vector2 AngleToVector(float angle)
     {
-        if (_player.Cultivation.CurrentState == CultivationState.Dead) return;
+        return new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
+    }
 
-        // Giới hạn tối đa 3 bệ phóng ám khí
-        if (_launchers.Count >= 3)
+    private void PlaceFormation()
+    {
+        var state = _player.Cultivation.CurrentState;
+        if (state == CultivationState.Dead || state == CultivationState.Breakthrough) return;
+
+        if (_formations.Count >= MAX_FORMATIONS)
         {
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Dat Toi Da 3 Be Phong!", Color.OrangeRed));
-            Console.WriteLine("[Cơ Quan] Cảnh báo: Đã đạt giới hạn tối đa 3 bệ phóng ám khí!");
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), $"Tối đa {MAX_FORMATIONS} trận pháp!", Color.OrangeRed));
             return;
         }
 
-        // Kiểm tra xem người chơi có đạn Thiết Mẫu không
-        var ammoItem = _player.Inventory.Items.FirstOrDefault(i => i.ItemId == "item_thiet_mau_01");
-        if (ammoItem == null || ammoItem.Quantity <= 0)
+        if (!_player.Inventory.RemoveItem(SPIRIT_STONE_ID, 1))
         {
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Can 1 Thiet Mau Ammo de dat!", Color.Red));
-            Console.WriteLine("[Cơ Quan] Thất bại: Không có đạn Thiết Mẫu trong túi đồ để đặt bệ phóng!");
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), "Cần 1 Linh Thạch để bày trận!", Color.Red));
             return;
         }
 
-        // Tiêu hao 1 Thiết Mẫu
-        _player.Inventory.RemoveItem("item_thiet_mau_01", 1);
+        var formation = new FormationArray(_player.Position, _nextFormationType);
+        _formations.Add(formation);
 
-        Vector2 playerPos = new Vector2(_player.PositionX, _player.PositionY);
-        var turret = new AutoLauncher(playerPos, _nextTurretTypeToPlace);
-        _launchers.Add(turret);
-
-        // Hiệu ứng khói bụi xẹt lửa khi đặt bệ phóng cơ quan
         TriggerShake(0.15f, 3.0f);
-        SpawnElementalBurst(playerPos, Element.None, 15);
+        SpawnElementalBurst(_player.Position, Element.None, 15);
 
-        string turretName = _nextTurretTypeToPlace switch
-        {
-            1 => "Vo Thanh Tu Tien",
-            2 => "Chu Cat Than No",
-            3 => "Ham Sa Xa Anh",
-            _ => "Turret"
-        };
-
-        _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 15), $"+ {turretName}", Color.Gold));
-        Console.WriteLine($"[Cơ Quan] ⚙ Đã đặt bệ phóng {turretName} tại vị trí {playerPos.X:F0},{playerPos.Y:F0} (Tổng số: {_launchers.Count}/3).");
+        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 15), $"+ {formation.Name}", Color.Gold));
+        Console.WriteLine($"[Trận Pháp] ⚙ Đã bày {formation.Name} tại {formation.Position.X:F0},{formation.Position.Y:F0} ({_formations.Count}/{MAX_FORMATIONS}).");
     }
 
-    private void TryReloadNearestTurret()
+    private void TryRechargeNearestFormation()
     {
         if (_player.Cultivation.CurrentState == CultivationState.Dead) return;
 
-        Vector2 playerPos = new Vector2(_player.PositionX, _player.PositionY);
-        
-        // Find nearest turret within 60px
-        var nearestTurret = _launchers
-            .Where(t => t.Active && Vector2.Distance(playerPos, t.Position) <= 60f)
-            .OrderBy(t => Vector2.Distance(playerPos, t.Position))
+        Vector2 playerPos = _player.Position;
+        var nearest = _formations
+            .Where(f => f.Active && Vector2.Distance(playerPos, f.Position) <= 60f)
+            .OrderBy(f => Vector2.Distance(playerPos, f.Position))
             .FirstOrDefault();
 
-        if (nearestTurret == null)
+        if (nearest == null)
         {
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Khong co Be Phong gan day!", Color.Gray));
+            _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 30), "Không có trận pháp gần đây!", Color.Gray));
             return;
         }
 
-        if (nearestTurret.AmmoCount >= nearestTurret.MaxAmmo)
+        if (nearest.AmmoCount >= nearest.MaxAmmo)
         {
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Be Phong da day dan!", Color.Yellow));
+            _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 30), "Trận pháp đã đầy linh lực!", Color.Yellow));
             return;
         }
 
-        // Check if player has Thiết Mẫu Ammo
-        var ammoItem = _player.Inventory.Items.FirstOrDefault(i => i.ItemId == "item_thiet_mau_01");
-        if (ammoItem == null || ammoItem.Quantity <= 0)
+        if (!_player.Inventory.RemoveItem(SPIRIT_STONE_ID, 1))
         {
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Khong du Thiet Mau Ammo!", Color.Red));
+            _floatingTexts.Add(new FloatingText(playerPos - new Vector2(0, 30), "Không đủ Linh Thạch!", Color.Red));
             return;
         }
 
-        // Consume 1 Thiết Mẫu and reload
-        _player.Inventory.RemoveItem("item_thiet_mau_01", 1);
-        nearestTurret.Reload();
-        
-        _floatingTexts.Add(new FloatingText(nearestTurret.Position - new Vector2(0, 20), "RELOADED!", Color.LimeGreen));
-        Console.WriteLine($"[Cơ Quan] ⚙ Đã nạp lại đạn cho Bệ phóng tại {nearestTurret.Position.X:F0},{nearestTurret.Position.Y:F0}. Tiêu hao 1 Thiết Mẫu.");
+        nearest.Reload();
+        _floatingTexts.Add(new FloatingText(nearest.Position - new Vector2(0, 20), "Nạp đầy linh lực!", Color.LimeGreen));
+        Console.WriteLine($"[Trận Pháp] ⚙ Nạp Linh Thạch cho {nearest.Name} tại {nearest.Position.X:F0},{nearest.Position.Y:F0}.");
     }
 
     private void FireActiveWeapon(Vector2 targetPos)
     {
-        Vector2 playerCenter = new Vector2(_player.PositionX, _player.PositionY);
-        Vector2 dir = targetPos - playerCenter;
+        Vector2 center = _player.Position;
+        Vector2 dir = targetPos - center;
 
         if (dir == Vector2.Zero) dir = new Vector2(1, 0);
         else dir.Normalize();
@@ -1302,22 +1182,16 @@ public class Game1 : Game
         float damage = 25f;
         float range = 250f;
         int count = 1;
+        bool silent = false;
         Element element = Element.None;
 
         if (weapon != null)
         {
             damage = weapon.CombatStats?.BaseDamage ?? 25f;
             range = (weapon.CombatStats?.Range ?? 25f) * 8f;
-            count = weapon.CombatStats?.ProjectileCount ?? 1;
-
-            if (weapon.ItemId == "am_khi_tu_tien_01")
-            {
-                element = Element.Wood;
-            }
-            else if (weapon.ItemId == "am_khi_chu_cat_02")
-            {
-                element = Element.Fire;
-            }
+            count = Math.Max(1, weapon.CombatStats?.ProjectileCount ?? 1);
+            silent = weapon.CombatStats?.SilentAttack ?? false;
+            element = ElementExtensions.ParseElement(weapon.Element);
         }
 
         float baseAngle = (float)Math.Atan2(dir.Y, dir.X);
@@ -1325,65 +1199,58 @@ public class Game1 : Game
 
         if (count == 1)
         {
-            _projectilePool.Spawn(playerCenter, dir, damage, range, speed, element);
+            _projectilePool.Spawn(center, dir, damage, range, speed, element, silent);
         }
         else
         {
-            float spreadAngle = count == 16 ? 0.6f : 0.2f;
+            float spreadAngle = count >= 10 ? 0.6f : 0.2f;
             float step = spreadAngle / (count - 1);
             float startAngle = baseAngle - spreadAngle / 2f;
 
             for (int i = 0; i < count; i++)
             {
-                float angle = startAngle + step * i;
-                Vector2 bulletDir = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
-                _projectilePool.Spawn(playerCenter, bulletDir, damage, range, speed, element);
+                _projectilePool.Spawn(center, AngleToVector(startAngle + step * i), damage, range, speed, element, silent);
             }
         }
 
-        string wHUDName = GetHUDItemName(weapon?.ItemId ?? string.Empty);
-        Console.WriteLine($"[Chiến Đấu] ⚔ Phóng {count} tia ám khí {wHUDName} (Hệ: {element})");
+        Console.WriteLine($"[Chiến Đấu] ⚔ Phóng {count} đạo {GetItemName(weapon?.ItemId ?? string.Empty)} (Hệ: {element})");
     }
 
     private void SpawnRandomMonster(Vector2 spawnPos)
     {
-        int monsterType = _random.Next(3);
-
         string name;
         int age;
         float hp;
         Element elem;
 
-        switch (monsterType)
+        switch (_random.Next(3))
         {
             case 0:
-                name = "Lam Ngan Thao";
-                age = 90; // Tạo quái nhỏ để test tiến hóa sinh trưởng lên Bách Niên
+                name = "Thanh Mộc Yêu Đằng";
+                age = 90; // Sắp tấn thăng Nhị Giai
                 hp = 180f;
                 elem = Element.Wood;
                 break;
             case 1:
-                name = "Hoa Ke";
-                age = 800; // Sắp đạt Thiên Niên
+                name = "Hỏa Vân Lang";
+                age = 800; // Tam Giai
                 hp = 400f;
                 elem = Element.Fire;
                 break;
-            case 2:
             default:
-                name = "Bang Tam";
-                age = 8000; // Sắp đạt Vạn Niên
+                name = "Hàn Băng Mãng";
+                age = 8000; // Ngũ Giai, sắp thành Yêu Vương
                 hp = 900f;
                 elem = Element.Ice;
                 break;
         }
 
         var m = new Monster(name, age, hp, spawnPos, elem);
-        
         m.OnKilled += HandleMonsterKilled;
 
         _monsters.Add(m);
-        _floatingTexts.Add(new FloatingText(spawnPos, $"Spawn: {m.Name} ({age}N)", Color.Tomato));
-        Console.WriteLine($"[Hệ Thống] Đã sinh Hồn Thú '{m.Name}' {age} năm ({elem}) tại {spawnPos}");
+        _floatingTexts.Add(new FloatingText(spawnPos, $"Xuất hiện: {m.Name}", Color.Tomato));
+        Console.WriteLine($"[Hệ Thống] Đã sinh Yêu Thú '{m.Name}' {age} năm ({elem}) tại {spawnPos}");
     }
 
     private void HandleProjectileCollisions()
@@ -1400,34 +1267,33 @@ public class Game1 : Game
                 {
                     proj.Active = false;
 
-                    // Apply aggro if projectile is not silent
+                    // Đòn đánh không ẩn thân sẽ kinh động Yêu Thú
                     if (!proj.IsSilent)
                     {
                         monster.IsAggroed = true;
                     }
 
-                    // Apply root if Wood skill and monster is Speed role
+                    // Mộc hệ mạnh trói chân, Yêu Thú tốc độ bị trói lâu hơn
                     if (proj.Element == Element.Wood && proj.Damage > 30f)
                     {
                         float rootDur = (monster.Role == "Speed") ? 3.5f : 1.5f;
                         monster.RootTimer = rootDur;
-                        _floatingTexts.Add(new FloatingText(monster.Position - new Vector2(0, 30), $"ROOTED ({rootDur:F1}s) VN!", Color.LimeGreen, 1.5f));
+                        _floatingTexts.Add(new FloatingText(monster.Position - new Vector2(0, 30), $"Trói chân ({rootDur:F1}s)", Color.LimeGreen, 1.5f));
                     }
 
-                    // Apply poison if player has Bát Chu Mâu (25% chance on hit)
-                    if (_player.Cultivation.HasBatChuMau && _random.NextDouble() < 0.25)
+                    // Vạn Độc Thể: 25% tẩm độc
+                    if (_player.Cultivation.HasVanDocThe && _random.NextDouble() < 0.25)
                     {
                         monster.PoisonTimer = 5.0f;
-                        _floatingTexts.Add(new FloatingText(monster.Position - new Vector2(0, 45), "POISON VN!", Color.Purple, 1.2f));
+                        _floatingTexts.Add(new FloatingText(monster.Position - new Vector2(0, 45), "Trúng độc!", Color.Purple, 1.2f));
                     }
 
                     monster.TakeDamage(proj.Damage, proj.Element, out float finalDmg, out bool isCounter);
 
                     Color txtColor = isCounter ? Color.Red : Color.Orange;
-                    string dmgText = isCounter ? $"-{finalDmg:F0} COUNTER!" : $"-{finalDmg:F0}";
+                    string dmgText = isCounter ? $"-{finalDmg:F0} KHẮC HỆ!" : $"-{finalDmg:F0}";
                     _floatingTexts.Add(new FloatingText(monster.Position - new Vector2(0, 15), dmgText, txtColor, 1.3f, isCounter ? 1.25f : 1.0f));
 
-                    // Rung giật màn hình và sinh tia nổ thuộc tính va chạm
                     TriggerShake(isCounter ? 0.18f : 0.1f, isCounter ? 4.5f : 2.5f);
                     SpawnElementalBurst(proj.Position, proj.Element, isCounter ? 12 : 6);
                     break;
@@ -1436,45 +1302,33 @@ public class Game1 : Game
         }
     }
 
-    private void TryAbsorbNearestSoulRing()
+    private void TryStartBreakthrough()
     {
         var cult = _player.Cultivation;
-        if (cult.CurrentState != CultivationState.BreakthroughReady && cult.CurrentState != CultivationState.Idle)
+        if (cult.CurrentState != CultivationState.BreakthroughReady)
         {
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Chua den binh canh!", Color.OrangeRed));
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), "Chưa chạm bình cảnh!", Color.OrangeRed));
             return;
         }
 
-        Vector2 playerPos = new Vector2(_player.PositionX, _player.PositionY);
-        
-        var ring = _soulRings
-            .Where(r => r.Active && Vector2.Distance(playerPos, r.Position) <= 60f)
-            .OrderBy(r => Vector2.Distance(playerPos, r.Position))
-            .FirstOrDefault();
-
-        if (ring != null)
+        if (cult.StartBreakthrough())
         {
-            _absorbingRingPosition = ring.Position;
-            ring.Active = false;
-            _soulRings.Remove(ring);
-
-            // Truyền cả TUỔI và HỆ của hồn thú để đột phá hồn kỹ tương ứng
-            cult.StartAbsorbingSoulRing(ring.Age, ring.Element);
-        }
-        else
-        {
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 30), "Khong co Hon Hoan gan day!", Color.Gray));
+            _isCraftingOpen = false;
+            TriggerShake(0.3f, 4f);
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 50),
+                cult.IsHeavenlyTribulation ? "THIÊN KIẾP GIÁNG LÂM!" : "BẮT ĐẦU XUNG QUAN!",
+                cult.IsHeavenlyTribulation ? Color.Cyan : Color.Gold, 2.5f, 1.3f));
         }
     }
 
     private void CycleEquippedWeapon()
     {
-        var weapons = _player.Inventory.Items.Where(i => i.Type == "HIDDEN_WEAPON").ToList();
+        var weapons = _player.Inventory.Items.Where(i => i.Type == InventoryComponent.TYPE_MAGIC_WEAPON).ToList();
         if (weapons.Count <= 1) return;
 
         var current = _player.Inventory.EquippedWeapon;
         int index = 0;
-        
+
         if (current != null)
         {
             var currItem = weapons.FirstOrDefault(w => w.ItemId == current.ItemId);
@@ -1485,53 +1339,145 @@ public class Game1 : Game
         }
 
         _player.Inventory.EquipWeapon(weapons[index].ItemId);
-        string nameHUD = GetHUDItemName(weapons[index].ItemId);
-        _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 35), $"Equip: {nameHUD}", Color.Gold));
+        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 35), $"Trang bị: {weapons[index].Name}", Color.Gold));
     }
 
     // ====================================================================
-    // METADATA HUD
+    // THIÊN KIẾP
     // ====================================================================
 
-    private string GetHUDItemName(string itemId)
+    private void UpdateLightningStrikes(float deltaTime)
     {
-        return itemId switch
+        for (int i = _lightningStrikes.Count - 1; i >= 0; i--)
         {
-            "food_huong_trang_01" => "Sausage (Phuc Hoi)",
-            "am_khi_tu_tien_01" => "Vo Thanh Tu Tien",
-            "am_khi_chu_cat_02" => "Chu Cat Than No",
-            "item_thiet_mau_01" => "Thiet Mau Ammo",
-            "mat_thi_thiet_mau" => "Thiet Mau Tho",
-            "lo_xo_co_quan" => "Lo Xo Co Quan",
-            "day_cung_kim_ti" => "Day Cung Kim Ty",
-            _ => "Tay khong"
-        };
+            var strike = _lightningStrikes[i];
+
+            if (!strike.Landed)
+            {
+                strike.Delay -= deltaTime;
+                if (strike.Delay <= 0f)
+                {
+                    strike.Landed = true;
+                    strike.FlashTimer = 0.25f;
+                    TriggerShake(0.2f, 5f);
+                    SpawnExplosion(strike.Position, Color.Cyan, 20);
+
+                    if (Vector2.Distance(_player.Position, strike.Position) <= strike.Radius + 10f)
+                    {
+                        _player.Cultivation.TakeTribulationDamage(strike.Damage);
+                        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), $"-{strike.Damage:F0} Lôi Kiếp!", Color.Cyan, 1.3f, 1.1f));
+                    }
+                }
+            }
+            else
+            {
+                strike.FlashTimer -= deltaTime;
+            }
+
+            if (strike.Finished)
+            {
+                _lightningStrikes.RemoveAt(i);
+            }
+        }
     }
 
-    private string GetRealmHUDName(CultivationRealm realm)
+    /// <summary>Vẽ tia sét gấp khúc từ trên trời đánh xuống vị trí strike.</summary>
+    private void DrawLightningBolt(LightningStrike strike)
     {
-        return realm switch
+        var rng = new Random(strike.Seed);
+        float alpha = Math.Clamp(strike.FlashTimer / 0.25f, 0f, 1f);
+        const int segments = 8;
+        Vector2 previous = strike.Position - new Vector2(0, 320f);
+
+        for (int s = 1; s <= segments; s++)
         {
-            CultivationRealm.HonSi => "Hon Si",
-            CultivationRealm.HonSu => "Hon Su",
-            CultivationRealm.DaiHonSu => "Dai Hon Su",
-            CultivationRealm.HonTon => "Hon Ton",
-            CultivationRealm.HonTong => "Hon Tong",
-            CultivationRealm.HonVuong => "Hon Vuong",
-            CultivationRealm.HonDe => "Hon De",
-            CultivationRealm.HonThanh => "Hon Thanh",
-            CultivationRealm.HonDauLa => "Hon Dau La",
-            CultivationRealm.PhongHaoDauLa => "Phong Hao Dau La",
-            CultivationRealm.Than => "Than",
-            _ => "Khong Ro"
+            Vector2 next = s == segments
+                ? strike.Position
+                : new Vector2(strike.Position.X + rng.Next(-14, 15), previous.Y + 320f / segments);
+
+            DrawLine(previous, next, Color.DeepSkyBlue * (0.45f * alpha), 7f);
+            DrawLine(previous, next, Color.White * alpha, 3f);
+            previous = next;
+        }
+    }
+
+    private void DrawLine(Vector2 start, Vector2 end, Color color, float thickness)
+    {
+        Vector2 delta = end - start;
+        float angle = (float)Math.Atan2(delta.Y, delta.X);
+        _spriteBatch.Draw(_pixelTexture, start, null, color, angle, new Vector2(0f, 0.5f),
+                          new Vector2(delta.Length(), thickness), SpriteEffects.None, 0f);
+    }
+
+    // ====================================================================
+    // METADATA VẬT PHẨM
+    // ====================================================================
+
+    private string GetItemName(string itemId)
+    {
+        if (string.IsNullOrEmpty(itemId)) return "Tay không";
+        return _consumables.FirstOrDefault(c => c.ItemId == itemId)?.Name
+            ?? _magicWeapons.FirstOrDefault(w => w.ItemId == itemId)?.Name
+            ?? itemId;
+    }
+
+    private Texture2D GetItemIcon(string itemId, out Color tint)
+    {
+        tint = Color.White;
+
+        var weapon = _magicWeapons.FirstOrDefault(w => w.ItemId == itemId);
+        if (weapon != null)
+        {
+            return ElementExtensions.ParseElement(weapon.Element) == Element.Fire ? _boltTexture : _needleTexture;
+        }
+
+        if (itemId.StartsWith("yeu_dan_")) return _beastCoreTexture;
+        if (itemId.StartsWith("dan_")) return _pillTexture;
+
+        tint = itemId switch
+        {
+            SPIRIT_STONE_ID => Color.LightSkyBlue,
+            "han_thiet" => Color.Silver,
+            "hoa_tinh_thach" => Color.OrangeRed,
+            "linh_moc_tam" => Color.LimeGreen,
+            _ => Color.White
         };
+        return _materialTexture;
+    }
+
+    /// <summary>Thêm vật phẩm vào túi theo ID (tự tra Đan Dược hay Pháp Khí). False nếu ID không tồn tại.</summary>
+    private bool AddItemById(string itemId, int quantity)
+    {
+        var consumable = _consumables.FirstOrDefault(c => c.ItemId == itemId);
+        if (consumable != null)
+        {
+            _player.Inventory.AddConsumable(consumable, quantity);
+            return true;
+        }
+
+        var weapon = _magicWeapons.FirstOrDefault(w => w.ItemId == itemId);
+        if (weapon != null)
+        {
+            _player.Inventory.AddMagicWeapon(weapon, quantity);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void DropItem(string itemId, Vector2 position)
+    {
+        string type = _magicWeapons.Any(w => w.ItemId == itemId)
+            ? InventoryComponent.TYPE_MAGIC_WEAPON
+            : InventoryComponent.TYPE_CONSUMABLE;
+        _droppedItems.Add(new DroppedItem(position, itemId, GetItemName(itemId), type, 1));
     }
 
     // ====================================================================
     // HUD & INVENTORY
     // ====================================================================
 
-    private void DrawHUD()
+    private void DrawHUD(float time)
     {
         var cult = _player.Cultivation;
         int barW = 200;
@@ -1540,127 +1486,94 @@ public class Game1 : Game
         int startY = 15;
         int spacing = 18;
 
-        // Vẽ Khung đen nền HUD (Chứa beveled border hiệu ứng 3D)
-        DrawRect(startX - 10, startY - 5, 305, 155, new Color(20, 22, 38, 220));
-        DrawRect(startX - 10, startY - 5, 305, 155, new Color(65, 75, 110), true);
-        DrawRect(startX - 9, startY - 4, 303, 1, new Color(100, 115, 160, 150)); // top inner highlight
+        // Khung nền HUD (viền vát 3D)
+        DrawRect(startX - 10, startY - 5, 305, 170, new Color(20, 22, 38, 220));
+        DrawRect(startX - 10, startY - 5, 305, 170, new Color(65, 75, 110), true);
+        DrawRect(startX - 9, startY - 4, 303, 1, new Color(100, 115, 160, 150));
 
-        // Tên và cảnh giới
-        string realmHUD = GetRealmHUDName(cult.CurrentRealm);
-        _spriteBatch.DrawString(_font, $"Duong Tam | {realmHUD} (Cap {cult.CurrentLevel})", 
+        // Đạo hiệu và cảnh giới
+        string realmName = CultivationComponent.GetRealmDisplayName(cult.CurrentRealm);
+        _spriteBatch.DrawString(_font, $"{_player.Name} | {realmName} tầng {cult.CurrentLevel}",
                                 new Vector2(startX, startY), Color.Gold);
 
-        // HP bar (Premium render)
         int hpY = startY + spacing + 6;
-        float hpRatio = cult.HP / cult.MaxHP;
-        DrawPremiumBar(startX, hpY, barW, barH, hpRatio, new Color(50, 15, 15), new Color(230, 45, 45), new Color(120, 40, 40), $"HP: {cult.HP:F0}/{cult.MaxHP:F0}", Color.Tomato);
+        DrawPremiumBar(startX, hpY, barW, barH, cult.HP / cult.MaxHP, new Color(50, 15, 15), new Color(230, 45, 45), new Color(120, 40, 40), $"HP: {cult.HP:F0}/{cult.MaxHP:F0}", Color.Tomato);
 
-        // EXP bar (Premium render)
         int expY = hpY + spacing;
-        float expRatio = cult.CurrentExp / cult.MaxExpForCurrentLevel;
-        expRatio = Math.Clamp(expRatio, 0f, 1f);
-        DrawPremiumBar(startX, expY, barW, barH, expRatio, new Color(15, 15, 50), new Color(60, 130, 255), new Color(40, 90, 180), $"EXP: {cult.CurrentExp:F0}/{cult.MaxExpForCurrentLevel:F0}", Color.LightSkyBlue);
+        float expRatio = Math.Clamp(cult.CurrentExp / cult.MaxExpForCurrentLevel, 0f, 1f);
+        DrawPremiumBar(startX, expY, barW, barH, expRatio, new Color(15, 15, 50), new Color(60, 130, 255), new Color(40, 90, 180), $"Tu vi: {cult.CurrentExp:F0}/{cult.MaxExpForCurrentLevel:F0}", Color.LightSkyBlue);
 
-        // Hồn Lực bar (Premium render)
         int spY = expY + spacing;
-        float spRatio = cult.SoulPower / cult.MaxSoulPower;
-        DrawPremiumBar(startX, spY, barW, barH, spRatio, new Color(10, 45, 20), new Color(45, 210, 110), new Color(30, 130, 70), $"SP: {cult.SoulPower:F0}/{cult.MaxSoulPower:F0}", Color.MediumSpringGreen);
+        DrawPremiumBar(startX, spY, barW, barH, cult.SpiritPower / cult.MaxSpiritPower, new Color(10, 45, 20), new Color(45, 210, 110), new Color(30, 130, 70), $"Linh lực: {cult.SpiritPower:F0}/{cult.MaxSpiritPower:F0}", Color.MediumSpringGreen);
 
-        // Ám khí hiện tại + Danh sách bệ phóng
+        // Pháp Khí + Trận Pháp
         int wY = spY + spacing;
-        string activeWeaponName = GetHUDItemName(_player.Inventory.EquippedWeapon?.ItemId ?? string.Empty);
-        _spriteBatch.DrawString(_font, $"Am Khi: {activeWeaponName} | Turrets: {_launchers.Count}/3", new Vector2(startX, wY + 5), Color.Khaki, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+        string weaponName = GetItemName(_player.Inventory.EquippedWeapon?.ItemId ?? string.Empty);
+        _spriteBatch.DrawString(_font, $"Pháp khí: {weaponName} | Trận: {_formations.Count}/{MAX_FORMATIONS}", new Vector2(startX, wY + 5), Color.Khaki, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, $"Trận kế tiếp: {FormationArray.GetFormationName(_nextFormationType)} (Y)", new Vector2(startX, wY + 21), Color.Tan, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
 
-        // Next turret cycling info
-        string nextTurretName = _nextTurretTypeToPlace switch
-        {
-            1 => "Vo Thanh Tu Tien",
-            2 => "Chu Cat Than No",
-            3 => "Ham Sa Xa Anh",
-            _ => "Unknown"
-        };
-        _spriteBatch.DrawString(_font, $"Next: {nextTurretName} (Y)", new Vector2(startX, wY + 20), Color.Tan, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
+        // Linh Căn và tỷ lệ đột phá
+        _spriteBatch.DrawString(_font, $"Linh căn: {cult.GetSpiritRootName()}", new Vector2(startX, wY + 37), Color.LightSalmon, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, $"Đột phá: {cult.CalculateBreakthroughSuccessRate():P0} (Đan +{cult.PillBuff:P0}, Tâm ma -{cult.HeartDemon:P0})",
+                                new Vector2(startX, wY + 53), cult.HeartDemon > 0 ? Color.Violet : Color.LightGreen, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
 
-        // Vẽ 9 ô Hồn Hoàn Hấp Thu dưới góc trái HUD
-        int ringsStartY = wY + spacing + 12;
-        int ringSize = 20;
-        int ringSpacing = 26;
-        for (int i = 0; i < 9; i++)
-        {
-            int rx = startX + i * ringSpacing;
-            bool activeRing = i < cult.SoulRingsCount;
-
-            DrawRect(rx, ringsStartY, ringSize, ringSize, new Color(25, 25, 45));
-            if (activeRing)
-            {
-                Color ringColor = (i + 1) switch
-                {
-                    1 => Color.White,
-                    2 => Color.Yellow,
-                    3 => Color.Purple,
-                    4 or 5 or 6 or 7 => new Color(30, 30, 30),
-                    8 or 9 => Color.Red,
-                    _ => Color.Gray
-                };
-                
-                Vector2 ringOrigin = new Vector2(_ringTexture.Width / 2f, _ringTexture.Height / 2f);
-                float targetScale = (ringSize * 0.9f) / _ringTexture.Width;
-                float pulse = 0.9f + 0.1f * (float)Math.Sin(gameTimeForDraw * 6f);
-                float finalScale = targetScale * pulse;
-
-                _spriteBatch.Draw(_ringTexture, new Vector2(rx + ringSize / 2f, ringsStartY + ringSize / 2f), null, 
-                                  ringColor, (float)gameTimeForDraw, ringOrigin, finalScale, SpriteEffects.None, 0f);
-            }
-            DrawRect(rx, ringsStartY, ringSize, ringSize, new Color(75, 85, 120), true);
-        }
-
-        // --- CỬA SỔ HIỂN THỊ HỒN KỸ CHỦ ĐỘNG (Q / W) ---
+        // --- Pháp Thuật chủ động (Q / E) ---
         int skillX = 335;
         int skillY = 15;
         DrawRect(skillX, skillY, 165, 140, new Color(20, 22, 38, 220));
         DrawRect(skillX, skillY, 165, 140, new Color(65, 75, 110), true);
-        DrawRect(skillX + 1, skillY + 1, 163, 1, new Color(100, 115, 160, 150)); // top inner highlight
-        _spriteBatch.DrawString(_font, "HON KY CHU DONG", new Vector2(skillX + 10, skillY + 8), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+        DrawRect(skillX + 1, skillY + 1, 163, 1, new Color(100, 115, 160, 150));
+        _spriteBatch.DrawString(_font, "PHÁP THUẬT", new Vector2(skillX + 10, skillY + 8), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
         DrawRect(skillX + 8, skillY + 24, 149, 1, new Color(65, 75, 110));
 
-        string qLabel = cult.Skill1 != null ? $"Q: {cult.Skill1.Name}\n   ({cult.Skill1.SPCost} SP)" : "Q: [Chua hoc]";
-        Color qColor = cult.Skill1 != null ? Color.MediumSpringGreen : Color.DarkGray;
-        _spriteBatch.DrawString(_font, qLabel, new Vector2(skillX + 10, skillY + 32), qColor, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
+        string qLabel = cult.Skill1 != null ? $"Q: {cult.Skill1.Name}\n   ({cult.Skill1.SPCost} linh lực)" : "Q: [Chưa lĩnh ngộ]";
+        _spriteBatch.DrawString(_font, qLabel, new Vector2(skillX + 10, skillY + 32), cult.Skill1 != null ? Color.MediumSpringGreen : Color.DarkGray, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
 
-        string wLabel = cult.Skill2 != null ? $"W: {cult.Skill2.Name}\n   ({cult.Skill2.SPCost} SP)" : "W: [Chua hoc]";
-        Color wColor = cult.Skill2 != null ? Color.Gold : Color.DarkGray;
-        _spriteBatch.DrawString(_font, wLabel, new Vector2(skillX + 10, skillY + 80), wColor, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
+        string eLabel = cult.Skill2 != null ? $"E: {cult.Skill2.Name}\n   ({cult.Skill2.SPCost} linh lực)" : "E: [Chưa lĩnh ngộ]";
+        _spriteBatch.DrawString(_font, eLabel, new Vector2(skillX + 10, skillY + 80), cult.Skill2 != null ? Color.Gold : Color.DarkGray, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
 
-        // Bát Chu Mâu stats banner below skills box
-        if (cult.HasBatChuMau)
+        // Thể chất Vạn Độc Thể
+        if (cult.HasVanDocThe)
         {
             DrawRect(skillX, skillY + 145, 165, 30, new Color(30, 15, 45, 220));
             DrawRect(skillX, skillY + 145, 165, 30, Color.Purple, true);
-            _spriteBatch.DrawString(_font, "[Bat Chu Mau Passive]", new Vector2(skillX + 8, skillY + 147), Color.Magenta, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
-            _spriteBatch.DrawString(_font, "+50HP +30SP 25% Poison", new Vector2(skillX + 8, skillY + 159), Color.White, 0f, Vector2.Zero, 0.65f, SpriteEffects.None, 0f);
+            _spriteBatch.DrawString(_font, "[Vạn Độc Thể]", new Vector2(skillX + 8, skillY + 147), Color.Magenta, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
+            _spriteBatch.DrawString(_font, "+50HP +30LL 25% tẩm độc", new Vector2(skillX + 8, skillY + 159), Color.White, 0f, Vector2.Zero, 0.65f, SpriteEffects.None, 0f);
         }
 
-        // Cảnh báo khi hấp thu & QTE Willpower bar
-        if (cult.CurrentState == CultivationState.AbsorbingRing)
+        float pulse = (float)(Math.Sin(time * 8.0) * 0.4 + 0.6);
+
+        // Nhắc nhở khi chạm bình cảnh
+        if (cult.CurrentState == CultivationState.BreakthroughReady)
         {
-            float pulse = (float)(Math.Sin(gameTimeForDraw * 8.0) * 0.4 + 0.6);
-            string warnMsg = "!!! WARNING: ABSORBING SOUL RING - Press [1] to eat Sausage !!!";
-            _spriteBatch.DrawString(_font, warnMsg, new Vector2(100, 195), Color.Red * pulse, 0f, Vector2.Zero, 1.05f, SpriteEffects.None, 0f);
-
-            string qteInstructions = "TAP SPACEBAR FAST TO BUILD WILLPOWER!";
-            _spriteBatch.DrawString(_font, qteInstructions, new Vector2(100, 220), Color.Gold, 0f, Vector2.Zero, 0.9f, SpriteEffects.None, 0f);
-
-            float willpowerRatio = Math.Clamp(cult.QTEPressCount * 0.05f, 0f, 1f);
-            DrawPremiumBar(100, 245, 250, 15, willpowerRatio, new Color(30, 30, 45), Color.Gold, Color.Orange, $"Willpower: {cult.QTEPressCount} (Buff: +{cult.QTEPressCount * 2}%)", Color.Gold);
+            string hint = cult.CurrentLevel >= 30
+                ? "BÌNH CẢNH! Nhấn [R] để độ Thiên Kiếp"
+                : "BÌNH CẢNH! Nhấn [R] để xung kích bình cảnh";
+            _spriteBatch.DrawString(_font, hint, new Vector2(100, 200), Color.Orange * pulse, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0f);
         }
 
-        // Vẽ Bảng hướng dẫn ở đáy màn hình
+        // Cảnh báo khi đang đột phá + thanh ổn định đạo tâm
+        if (cult.CurrentState == CultivationState.Breakthrough)
+        {
+            string warnMsg = cult.IsHeavenlyTribulation
+                ? "!!! THIÊN KIẾP GIÁNG LÂM - Di chuyển né vòng đỏ !!!"
+                : "!!! ĐANG XUNG QUAN - Nhấn [1-5] dùng Hồi Xuân Đan !!!";
+            _spriteBatch.DrawString(_font, warnMsg, new Vector2(100, 195), (cult.IsHeavenlyTribulation ? Color.Cyan : Color.Red) * pulse, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0f);
+
+            _spriteBatch.DrawString(_font, "BẤM SPACE LIÊN TỤC ĐỂ ỔN ĐỊNH ĐẠO TÂM!", new Vector2(100, 220), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+
+            float waveRatio = cult.TribulationTotalWaves > 0 ? (float)cult.TribulationWave / cult.TribulationTotalWaves : 0f;
+            DrawPremiumBar(100, 245, 250, 15, waveRatio, new Color(30, 30, 45), Color.Gold, Color.Orange,
+                           $"Đợt {cult.TribulationWave}/{cult.TribulationTotalWaves} | Tỷ lệ {cult.CalculateBreakthroughSuccessRate():P0} (Đạo tâm +{cult.QTEPressCount * 2}%)", Color.Gold);
+        }
+
+        // Bảng hướng dẫn ở đáy màn hình
         int guideY = 540;
         DrawRect(20, guideY, 760, 50, new Color(18, 18, 30, 220));
         DrawRect(20, guideY, 760, 50, new Color(55, 60, 85), true);
-        DrawRect(21, guideY + 1, 758, 1, new Color(90, 100, 135, 150)); // top inner highlight
-        _spriteBatch.DrawString(_font, "[WASD]: Move | [Left Click]: Normal Fire | [Right Click]: Spawn Monster | [T]: Place Turret", new Vector2(35, guideY + 5), Color.Silver, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
-        _spriteBatch.DrawString(_font, "[I]: Inventory | [E]: Switch Weapon | [1-5]: Quick Eat | [R]: Absorb Ring | [Q/W]: Cast Skills | [F]: Reload | [Y]: Cycle Turret | [F5]: Save DB | [F9]: Load DB", new Vector2(35, guideY + 26), Color.Gold, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+        DrawRect(21, guideY + 1, 758, 1, new Color(90, 100, 135, 150));
+        _spriteBatch.DrawString(_font, "[WASD] Di chuyển | [Chuột trái] Phi kiếm | [Chuột phải] Gọi Yêu Thú | [T] Bày trận | [Y] Đổi trận | [F] Nạp Linh Thạch", new Vector2(35, guideY + 7), Color.Silver, 0f, Vector2.Zero, 0.72f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, "[M] Đả tọa | [R] Đột phá | [Q/E] Pháp thuật | [I] Túi | [Tab] Đổi pháp khí | [1-5] Dùng | [C] Lò luyện | [F5/F9] Lưu/Tải", new Vector2(35, guideY + 27), Color.Gold, 0f, Vector2.Zero, 0.72f, SpriteEffects.None, 0f);
     }
 
     private void DrawInventoryUI()
@@ -1670,16 +1583,13 @@ public class Game1 : Game
         int width = 265;
         int height = 505;
 
-        // Vẽ Nền
         DrawRect(startX, startY, width, height, new Color(24, 26, 45, 230));
         DrawRect(startX, startY, width, height, new Color(80, 95, 140), true);
-        DrawRect(startX + 1, startY + 1, width - 2, 1, new Color(110, 130, 190, 150)); // top inner highlight
+        DrawRect(startX + 1, startY + 1, width - 2, 1, new Color(110, 130, 190, 150));
 
-        // Vẽ Tiêu đề
-        _spriteBatch.DrawString(_font, "TUI DO (INVENTORY)", new Vector2(startX + 38, startY + 15), Color.Gold, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, "TÚI TRỮ VẬT", new Vector2(startX + 70, startY + 15), Color.Gold, 0f, Vector2.Zero, 1.0f, SpriteEffects.None, 0f);
         DrawRect(startX + 15, startY + 40, width - 30, 2, new Color(80, 95, 140));
 
-        // Vẽ slots
         var items = _player.Inventory.Items;
         int slotStartX = startX + 15;
         int slotStartY = startY + 55;
@@ -1691,52 +1601,38 @@ public class Game1 : Game
             int sY = slotStartY + i * (slotHeight + 8);
             DrawRect(slotStartX, sY, width - 30, slotHeight, new Color(15, 16, 28));
 
-            if (i < items.Count)
+            if (i >= items.Count)
             {
-                var item = items[i];
-                bool isEquipped = _player.Inventory.EquippedWeapon != null && 
-                                  _player.Inventory.EquippedWeapon.ItemId == item.ItemId;
+                DrawRect(slotStartX, sY, width - 30, slotHeight, new Color(40, 43, 60), true);
+                _spriteBatch.DrawString(_font, "Ô trống", new Vector2(slotStartX + 52, sY + 25), Color.DarkGray, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+                continue;
+            }
 
-                if (isEquipped)
-                {
-                    DrawRect(slotStartX, sY, width - 30, slotHeight, Color.LimeGreen * 0.15f);
-                    DrawRect(slotStartX, sY, width - 30, slotHeight, Color.Gold, true);
-                }
-                else
-                {
-                    DrawRect(slotStartX, sY, width - 30, slotHeight, new Color(60, 70, 100), true);
-                }
+            var item = items[i];
+            bool isEquipped = _player.Inventory.EquippedWeapon?.ItemId == item.ItemId;
 
-                Texture2D? iconTex = item.Type switch
-                {
-                    "CONSUMABLE" when item.ItemId == "item_thiet_mau_01" => _needleTexture,
-                    "CONSUMABLE" => _sausageTexture,
-                    "HIDDEN_WEAPON" when item.ItemId == "am_khi_tu_tien_01" => _needleTexture,
-                    "HIDDEN_WEAPON" when item.ItemId == "am_khi_chu_cat_02" => _boltTexture,
-                    _ => _sausageTexture
-                };
-
-                if (iconTex != null)
-                {
-                    float maxIconDim = 32f;
-                    float iconScale = maxIconDim / Math.Max(iconTex.Width, iconTex.Height);
-                    _spriteBatch.Draw(iconTex, new Vector2(slotStartX + 25, sY + slotHeight / 2f), null, Color.White, 0f, 
-                                      new Vector2(iconTex.Width / 2f, iconTex.Height / 2f), iconScale, SpriteEffects.None, 0f);
-                }
-
-                string nameHUD = GetHUDItemName(item.ItemId);
-                string numKey = $"[{i + 1}] ";
-                _spriteBatch.DrawString(_font, numKey + nameHUD, new Vector2(slotStartX + 52, sY + 8), isEquipped ? Color.Gold : Color.White, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
-                _spriteBatch.DrawString(_font, $"SL: {item.Quantity}", new Vector2(slotStartX + 52, sY + 28), Color.LimeGreen, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
-                
-                string typeHUD = item.Type == "CONSUMABLE" ? "Duoc pham / Thuc pham" : "Am Khi (Weapon)";
-                _spriteBatch.DrawString(_font, typeHUD, new Vector2(slotStartX + 52, sY + 44), Color.Gray, 0f, Vector2.Zero, 0.72f, SpriteEffects.None, 0f);
+            if (isEquipped)
+            {
+                DrawRect(slotStartX, sY, width - 30, slotHeight, Color.LimeGreen * 0.15f);
+                DrawRect(slotStartX, sY, width - 30, slotHeight, Color.Gold, true);
             }
             else
             {
-                DrawRect(slotStartX, sY, width - 30, slotHeight, new Color(40, 43, 60), true);
-                _spriteBatch.DrawString(_font, "Slot Trong", new Vector2(slotStartX + 52, sY + 25), Color.DarkGray, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
+                DrawRect(slotStartX, sY, width - 30, slotHeight, new Color(60, 70, 100), true);
             }
+
+            Texture2D iconTex = GetItemIcon(item.ItemId, out Color tint);
+            float iconScale = 32f / Math.Max(iconTex.Width, iconTex.Height);
+            _spriteBatch.Draw(iconTex, new Vector2(slotStartX + 25, sY + slotHeight / 2f), null, tint, 0f,
+                              new Vector2(iconTex.Width / 2f, iconTex.Height / 2f), iconScale, SpriteEffects.None, 0f);
+
+            _spriteBatch.DrawString(_font, $"[{i + 1}] {item.Name}", new Vector2(slotStartX + 52, sY + 8), isEquipped ? Color.Gold : Color.White, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
+            _spriteBatch.DrawString(_font, $"SL: {item.Quantity}", new Vector2(slotStartX + 52, sY + 28), Color.LimeGreen, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
+
+            string typeName = item.Type == InventoryComponent.TYPE_MAGIC_WEAPON
+                ? "Pháp khí"
+                : (item.Consumable?.Effects.Count ?? 0) > 0 ? "Đan dược" : "Nguyên liệu";
+            _spriteBatch.DrawString(_font, typeName, new Vector2(slotStartX + 52, sY + 44), Color.Gray, 0f, Vector2.Zero, 0.72f, SpriteEffects.None, 0f);
         }
     }
 
@@ -1758,29 +1654,31 @@ public class Game1 : Game
         }
     }
 
-    private double gameTimeForDraw;
-    
+    private void DrawCenteredText(string text, Vector2 centerBottom, Color color, float scale)
+    {
+        Vector2 size = _font.MeasureString(text) * scale;
+        _spriteBatch.DrawString(_font, text, new Vector2(centerBottom.X - size.X / 2f, centerBottom.Y), color, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+    }
+
     private void UpdateWindowTitle()
     {
         var cult = _player.Cultivation;
-        string stateVN = cult.CurrentState switch
+        string stateName = cult.CurrentState switch
         {
             CultivationState.Idle => "Nhàn Rỗi",
-            CultivationState.Meditating => "Minh Tưởng ✦",
-            CultivationState.BreakthroughReady => "⚠ CẦN HỒN HOÀN",
-            CultivationState.AbsorbingRing => "⚡ ĐANG HẤP THU",
+            CultivationState.Meditating => "Đả Tọa ✦",
+            CultivationState.BreakthroughReady => "⚠ BÌNH CẢNH",
+            CultivationState.Breakthrough => cult.IsHeavenlyTribulation ? "⚡ ĐỘ THIÊN KIẾP" : "⚡ XUNG QUAN",
             CultivationState.Dead => "☠ TỬ VONG",
             _ => "???"
         };
 
         string realm = CultivationComponent.GetRealmDisplayName(cult.CurrentRealm);
-        gameTimeForDraw = _gameTimeManager.TotalGameDays * 24.0 * 60.0;
 
-        Window.Title = $"Đấu La | Duong Tam | {realm} Cấp {cult.CurrentLevel} | " +
+        Window.Title = $"Tu Tiên | {_player.Name} | {realm} tầng {cult.CurrentLevel} | " +
                        $"HP: {cult.HP:F0}/{cult.MaxHP:F0} | " +
-                       $"SP: {cult.SoulPower:F0}/{cult.MaxSoulPower:F0} | " +
-                       $"HH: {cult.SoulRingsCount}/9 | " +
-                       $"[{stateVN}] | {_gameTimeManager.GetFormattedTime()}";
+                       $"Linh lực: {cult.SpiritPower:F0}/{cult.MaxSpiritPower:F0} | " +
+                       $"[{stateName}] | {_gameTimeManager.GetFormattedTime()}";
     }
 
     // ====================================================================
@@ -1789,59 +1687,55 @@ public class Game1 : Game
 
     private void LoadGameData()
     {
-        // Tải trước dữ liệu mẫu từ tệp JSON tĩnh để phòng hờ trường hợp MySQL offline
-        var localWeapons = _dataLoader.LoadHiddenWeapons();
+        // Tải trước dữ liệu từ JSON tĩnh để phòng hờ MySQL offline
+        var localWeapons = _dataLoader.LoadMagicWeapons();
         var localConsumables = _dataLoader.LoadConsumables();
+        _techniques = _dataLoader.LoadTechniques();
 
         if (_dbManager != null && _dbManager.IsConnected)
         {
-            // Thực hiện di cư (Migrate) dữ liệu tĩnh từ JSON vào MySQL nếu các bảng trong MySQL trống
+            // Đồng bộ dữ liệu JSON vào MySQL
             _dbManager.MigrateJsonToMySql(localConsumables, localWeapons);
 
-            // Nạp dữ liệu trực tiếp từ MySQL làm nguồn chính thức (Source of truth)
-            _hiddenWeapons = _dbManager.LoadHiddenWeaponsFromDb();
+            // Nạp từ MySQL làm nguồn chính thức
+            _magicWeapons = _dbManager.LoadMagicWeaponsFromDb();
             _consumables = _dbManager.LoadConsumablesFromDb();
 
-            // Nếu nạp từ MySQL bị trống (lỗi hiếm gặp), sử dụng dữ liệu JSON tĩnh làm dự phòng
-            if (_hiddenWeapons == null || _hiddenWeapons.Count == 0) _hiddenWeapons = localWeapons;
-            if (_consumables == null || _consumables.Count == 0) _consumables = localConsumables;
+            if (_magicWeapons.Count == 0) _magicWeapons = localWeapons;
+            if (_consumables.Count == 0) _consumables = localConsumables;
         }
         else
         {
-            // Dự phòng: Nạp trực tiếp từ JSON khi MySQL offline
-            _hiddenWeapons = localWeapons;
+            _magicWeapons = localWeapons;
             _consumables = localConsumables;
             Console.WriteLine("[Hệ Thống] Đã nạp dữ liệu từ file JSON tĩnh (Offline Mode).");
         }
+
+        BuildRecipes();
+    }
+
+    /// <summary>Gom công thức từ Pháp Khí và Đan Dược có crafting_recipe (data-driven).</summary>
+    private void BuildRecipes()
+    {
+        _recipes = _magicWeapons
+            .Where(w => w.CraftingRecipe.Count > 0)
+            .Select(w => new CraftingRecipe(w.ItemId, w.Name, w.TierRequired, w.CraftingRecipe))
+            .Concat(_consumables
+                .Where(c => c.CraftingRecipe.Count > 0)
+                .Select(c => new CraftingRecipe(c.ItemId, c.Name, c.TierRequired, c.CraftingRecipe)))
+            .Take(MAX_RECIPES_SHOWN)
+            .ToList();
     }
 
     private void GiveInitialInventoryItems()
     {
-        var food = _consumables.FirstOrDefault(c => c.ItemId == "food_huong_trang_01");
-        if (food != null)
-        {
-            _player.Inventory.AddConsumable(food, 5);
-        }
+        AddItemById("dan_hoi_xuan", 5);
+        AddItemById(SPIRIT_STONE_ID, 5);
+        AddItemById("dan_pha_canh", 1);
+        AddItemById("phi_kiem_thanh_phong", 1);
+        AddItemById("kiem_hap_xich_diem", 1);
 
-        var ammo = _consumables.FirstOrDefault(c => c.ItemId == "item_thiet_mau_01");
-        if (ammo != null)
-        {
-            _player.Inventory.AddConsumable(ammo, 5);
-        }
-
-        var needle = _hiddenWeapons.FirstOrDefault(w => w.ItemId == "am_khi_tu_tien_01");
-        if (needle != null)
-        {
-            _player.Inventory.AddHiddenWeapon(needle, 1);
-        }
-
-        var bolt = _hiddenWeapons.FirstOrDefault(w => w.ItemId == "am_khi_chu_cat_02");
-        if (bolt != null)
-        {
-            _player.Inventory.AddHiddenWeapon(bolt, 1);
-        }
-
-        _player.Inventory.EquipWeapon("am_khi_tu_tien_01");
+        _player.Inventory.EquipWeapon("phi_kiem_thanh_phong");
     }
 
     private bool IsKeyJustPressed(KeyboardState current, Keys key)
@@ -1849,53 +1743,82 @@ public class Game1 : Game
         return current.IsKeyDown(key) && _previousKeyState.IsKeyUp(key);
     }
 
+    private void AutoSave(float textOffsetY)
+    {
+        if (!_dbManager.IsConnected) return;
+        _dbManager.SavePlayerState(_player, _monsters, _droppedItems, _formations);
+        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, textOffsetY), "Tự động lưu", Color.Lime * 0.7f, 1.5f, 0.9f));
+    }
+
     private void SubscribeToEvents()
     {
         _eventManager.Subscribe<OnLevelUpEvent>(e =>
         {
-            Console.WriteLine($"[EVENT] ⬆ TĂNG CẤP: {e.PlayerName} Cấp {e.OldLevel} → Cấp {e.NewLevel}");
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 50), "LEVEL UP!", Color.Yellow, 2.0f, 1.2f));
-            if (_dbManager.IsConnected)
-            {
-                _dbManager.SavePlayerState(_player, _monsters, _droppedItems, _launchers, _soulRings);
-                _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 70), "Auto-Saved!", Color.Lime * 0.7f, 1.5f, 0.9f));
-            }
+            Console.WriteLine($"[EVENT] ⬆ TĂNG TẦNG: {e.PlayerName} tầng {e.OldLevel} → tầng {e.NewLevel}");
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 50), $"Tầng {e.NewLevel}!", Color.Yellow, 2.0f, 1.2f));
+            AutoSave(70);
+        });
+
+        _eventManager.Subscribe<OnRealmChangedEvent>(e =>
+        {
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 90), $"Bước vào {e.NewRealm}!", Color.Gold, 3.0f, 1.3f));
+            SpawnBreakthroughBurst(_player.Position);
         });
 
         _eventManager.Subscribe<OnBottleneckReachedEvent>(e =>
         {
-            Console.WriteLine($"[EVENT] ⚠ BÌNH CẢNH: {e.PlayerName} tại Cấp {e.Level} ({e.CurrentRealm}) — Cần Hồn Hoàn!");
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 50), "BINH CANH! CAN HON HOAN", Color.OrangeRed, 3.0f, 1.2f));
+            Console.WriteLine($"[EVENT] ⚠ BÌNH CẢNH: {e.PlayerName} tại tầng {e.Level} ({e.CurrentRealm})");
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 50),
+                e.IsHeavenlyTribulation ? "BÌNH CẢNH! [R] độ Thiên Kiếp" : "BÌNH CẢNH! [R] xung quan",
+                Color.OrangeRed, 3.0f, 1.2f));
         });
 
         _eventManager.Subscribe<OnBreakthroughSuccessEvent>(e =>
         {
-            Console.WriteLine($"[EVENT] ★ ĐỘT PHÁ THÀNH CÔNG: {e.PlayerName} → {e.NewRealm} Cấp {e.NewLevel} (Hồn Hoàn #{e.SoulRingNumber})");
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 60), $"SUCCESS #{e.SoulRingNumber}!", Color.Gold, 3.0f, 1.3f));
-            if (_dbManager.IsConnected)
-            {
-                _dbManager.SavePlayerState(_player, _monsters, _droppedItems, _launchers, _soulRings);
-                _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 80), "Auto-Saved!", Color.Lime * 0.7f, 1.5f, 0.9f));
-            }
+            Console.WriteLine($"[EVENT] ★ ĐỘT PHÁ THÀNH CÔNG: {e.PlayerName} tầng {e.Level} (lần {e.BreakthroughNumber})");
+            _lightningStrikes.Clear();
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 60), "ĐỘT PHÁ THÀNH CÔNG!", Color.Gold, 3.0f, 1.3f));
+            SpawnBreakthroughBurst(_player.Position);
+            TriggerShake(0.4f, 6f);
+            AutoSave(80);
         });
 
         _eventManager.Subscribe<OnBreakthroughFailedEvent>(e =>
         {
             Console.WriteLine($"[EVENT] ✗ ĐỘT PHÁ THẤT BẠI: {e.PlayerName} — {e.Reason} (Tỷ lệ: {e.SuccessRate:P1})");
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 60), "BREAKTHROUGH FAILED!", Color.Red, 3.0f, 1.3f));
+            _lightningStrikes.Clear();
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 60), $"ĐỘT PHÁ THẤT BẠI! Rớt {e.LevelLost} tầng", Color.Red, 3.0f, 1.2f));
+            TriggerShake(0.6f, 8f);
+            SpawnExplosion(_player.Position, Color.MediumPurple, 30);
+        });
+
+        _eventManager.Subscribe<OnTechniqueLearnedEvent>(e =>
+        {
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 100), $"Lĩnh ngộ: {e.TechniqueName}", Color.YellowGreen, 3.0f, 1.2f));
+        });
+
+        _eventManager.Subscribe<OnLightningStrikeEvent>(e =>
+        {
+            for (int i = 0; i < e.StrikeCount; i++)
+            {
+                // Đạo lôi đầu tiên nhắm thẳng vào người chơi, các đạo sau rải ngẫu nhiên quanh đó
+                float spread = i == 0 ? 10f : 70f;
+                Vector2 offset = new Vector2((float)(_random.NextDouble() * 2 - 1) * spread, (float)(_random.NextDouble() * 2 - 1) * spread);
+                _lightningStrikes.Add(new LightningStrike(_player.Position + offset, CultivationComponent.LIGHTNING_STRIKE_DELAY, e.Damage, _random.Next()));
+            }
         });
 
         _eventManager.Subscribe<OnPlayerDiedEvent>(e =>
         {
             Console.WriteLine($"[EVENT] ☠ TỬ VONG: {e.PlayerName} — {e.CauseOfDeath}");
-            _floatingTexts.Add(new FloatingText(new Vector2(_player.PositionX, _player.PositionY - 60), "DEAD!", Color.DarkRed, 4.0f, 1.4f));
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 60), "TỬ VONG!", Color.DarkRed, 4.0f, 1.4f));
             TriggerShake(0.8f, 10.0f);
-            SpawnExplosion(new Vector2(_player.PositionX, _player.PositionY), Color.DarkRed, 40);
+            SpawnExplosion(_player.Position, Color.DarkRed, 40);
         });
     }
 
     // ====================================================================
-    // HIỆU ỨNG HẠT, RUNG MÀN HÌNH VÀ THANH MÁU CAO CẤP
+    // HIỆU ỨNG HẠT, RUNG MÀN HÌNH VÀ THANH MÁU
     // ====================================================================
 
     private void TriggerShake(float duration, float intensity)
@@ -1972,44 +1895,37 @@ public class Game1 : Game
     private void UpdateMeditationVFX()
     {
         var cult = _player.Cultivation;
-        if (cult.CurrentState == CultivationState.Meditating)
+        if (cult.CurrentState == CultivationState.Meditating && _random.NextDouble() < 0.12)
         {
-            if (_random.NextDouble() < 0.12)
-            {
-                // Hạt khí bay lên từ xung quanh cơ thể
-                Vector2 pos = new Vector2(_player.PositionX + _random.Next(-12, 12), _player.PositionY + _random.Next(-4, 12));
-                Vector2 vel = new Vector2(0, -25f);
-                Color auraColor = _random.Next(2) == 0 ? Color.Gold * 0.8f : Color.SkyBlue * 0.8f;
-                _particles.Add(new Particle(pos, vel, auraColor, (float)(_random.NextDouble() * 2.5 + 1.5), (float)(_random.NextDouble() * 0.8 + 0.6), ParticleType.Aura));
-            }
+            // Linh khí bay lên quanh cơ thể
+            Vector2 pos = new Vector2(_player.PositionX + _random.Next(-12, 12), _player.PositionY + _random.Next(-4, 12));
+            Vector2 vel = new Vector2(0, -25f);
+            Color auraColor = _random.Next(2) == 0 ? Color.Gold * 0.8f : Color.SkyBlue * 0.8f;
+            _particles.Add(new Particle(pos, vel, auraColor, (float)(_random.NextDouble() * 2.5 + 1.5), (float)(_random.NextDouble() * 0.8 + 0.6), ParticleType.Aura));
         }
     }
 
-    private void UpdateAbsorptionVFX()
+    private void UpdateBreakthroughVFX()
     {
         var cult = _player.Cultivation;
-        if (cult.CurrentState == CultivationState.AbsorbingRing)
-        {
-            if (_random.NextDouble() < 0.25)
-            {
-                // Hạt khí cuộn tròn từ bệ hồn hoàn bay về phía người chơi
-                Vector2 playerCenter = new Vector2(_player.PositionX, _player.PositionY);
-                Vector2 spawnPos = _absorbingRingPosition + new Vector2((float)(_random.NextDouble() * 40 - 20), (float)(_random.NextDouble() * 40 - 20));
-                
-                Vector2 dir = playerCenter - spawnPos;
-                float dist = dir.Length();
-                if (dist > 5f)
-                {
-                    dir.Normalize();
-                    Vector2 vel = dir * (dist * 1.5f + 50f);
-                    
-                    Color ringColor = cult.HP < cult.MaxHP * 0.4f ? Color.Red * 0.9f : Color.Purple * 0.9f; 
-                    if (_random.Next(3) == 0) ringColor = Color.Gold * 0.9f;
+        if (cult.CurrentState != CultivationState.Breakthrough || _random.NextDouble() >= 0.25) return;
 
-                    _particles.Add(new Particle(spawnPos, vel, ringColor, (float)(_random.NextDouble() * 2 + 1.5), 0.7f, ParticleType.Spark));
-                }
-            }
-        }
+        // Linh khí thiên địa cuộn xoáy về phía người chơi
+        Vector2 center = _player.Position;
+        double angle = _random.NextDouble() * Math.PI * 2;
+        Vector2 spawnPos = center + new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle)) * 60f;
+
+        Vector2 dir = center - spawnPos;
+        float dist = dir.Length();
+        dir.Normalize();
+        Vector2 vel = dir * (dist * 1.5f + 50f);
+
+        Color color = cult.HP < cult.MaxHP * 0.4f ? Color.Red * 0.9f
+                    : cult.IsHeavenlyTribulation ? Color.DeepSkyBlue * 0.9f
+                    : Color.Purple * 0.9f;
+        if (_random.Next(3) == 0) color = Color.Gold * 0.9f;
+
+        _particles.Add(new Particle(spawnPos, vel, color, (float)(_random.NextDouble() * 2 + 1.5), 0.7f, ParticleType.Spark));
     }
 
     private void SpawnElementalBurst(Vector2 position, Element element, int count)
@@ -2019,7 +1935,7 @@ public class Game1 : Game
             double angle = _random.NextDouble() * Math.PI * 2;
             float speed = (float)(_random.NextDouble() * 120 + 40);
             Vector2 vel = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle)) * speed;
-            
+
             Color pColor;
             ParticleType pType;
             float size = (float)(_random.NextDouble() * 3.0 + 1.5);
@@ -2088,29 +2004,25 @@ public class Game1 : Game
 
     private void DrawPremiumBar(int x, int y, int width, int height, float ratio, Color bgColor, Color barColor, Color borderColor, string label, Color textColor)
     {
-        // Vẽ Nền
         DrawRect(x, y, width, height, bgColor);
-        
-        // Vẽ phần thanh tiến trình
+
         int fillWidth = (int)(width * Math.Clamp(ratio, 0f, 1f));
         if (fillWidth > 0)
         {
             DrawRect(x, y, fillWidth, height, barColor);
-            
-            // Hiệu ứng Glassy 3D - Nửa trên sáng bóng
+
+            // Hiệu ứng thủy tinh 3D - nửa trên sáng bóng
             DrawRect(x, y, fillWidth, Math.Max(1, height / 3), Color.White * 0.22f);
-            
-            // Hiệu ứng Glassy 3D - Nửa dưới bóng mờ
+
+            // Nửa dưới bóng mờ
             DrawRect(x, y + height - Math.Max(1, height / 3), fillWidth, Math.Max(1, height / 3), Color.Black * 0.18f);
         }
-        
-        // Vẽ viền ngoài
+
         DrawRect(x, y, width, height, borderColor, true);
-        
-        // Vẽ nhãn văn bản
+
         if (!string.IsNullOrEmpty(label))
         {
-            _spriteBatch.DrawString(_font, label, new Vector2(x + width + 10, y - 2), textColor, 0f, Vector2.Zero, 0.82f, SpriteEffects.None, 0f);
+            _spriteBatch.DrawString(_font, label, new Vector2(x + width + 10, y - 2), textColor, 0f, Vector2.Zero, 0.78f, SpriteEffects.None, 0f);
         }
     }
 
@@ -2119,191 +2031,161 @@ public class Game1 : Game
         TriggerShake(0.35f, 6.0f);
         SpawnElementalBurst(monster.Position, monster.Element, 25);
 
-        // Rơi Hồn Hoàn lưu trữ tuổi thọ và hệ thuộc tính của quái vật!
-        var ring = new SoulRingEntity(monster.Position, monster.Age, monster.Element);
-        _soulRings.Add(ring);
-        _floatingTexts.Add(new FloatingText(monster.Position, $"Dropped Soul Ring {monster.Age}N ({monster.Element})!", Color.Yellow, 2.5f, 1.2f));
+        // Yêu Đan phẩm chất theo phẩm giai Yêu Thú
+        int grade = monster.Grade;
+        string coreId = grade <= 3 ? "yeu_dan_ha_pham" : grade <= 6 ? "yeu_dan_trung_pham" : "yeu_dan_thuong_pham";
+        DropItem(coreId, monster.Position);
+        _floatingTexts.Add(new FloatingText(monster.Position, $"Rơi {GetItemName(coreId)}!", Color.Yellow, 2.5f, 1.1f));
 
-        // Rơi nguyên liệu rèn với tỷ lệ 40% dựa theo hệ của quái vật
+        // 40% rơi nguyên liệu theo hệ Yêu Thú
         if (_random.NextDouble() < 0.4)
         {
-            string matId = monster.Element switch
+            string materialId = monster.Element switch
             {
-                Element.Wood => "day_cung_kim_ti",
-                Element.Fire => "lo_xo_co_quan",
-                Element.Ice => "mat_thi_thiet_mau",
-                _ => "mat_thi_thiet_mau"
+                Element.Wood => "linh_moc_tam",
+                Element.Fire => "hoa_tinh_thach",
+                _ => "han_thiet"
             };
-            string matName = GetHUDItemName(matId);
-            _droppedItems.Add(new DroppedItem(monster.Position + new Vector2(_random.Next(-15, 15), _random.Next(-15, 15)), matId, matName, "CONSUMABLE", 1));
+            DropItem(materialId, monster.Position + new Vector2(_random.Next(-15, 15), _random.Next(-15, 15)));
         }
 
         _monsters.Remove(monster);
     }
 
-    private int GetInventoryItemCount(string itemId)
-    {
-        var item = _player.Inventory.Items.FirstOrDefault(i => i.ItemId == itemId);
-        return item?.Quantity ?? 0;
-    }
+    // ====================================================================
+    // LÒ LUYỆN (LUYỆN ĐAN / LUYỆN KHÍ)
+    // ====================================================================
 
     private bool CanCraftRecipe(int recipeIndex)
     {
-        if (recipeIndex == 0) // Vô Thanh Tụ Tiễn
-        {
-            return GetInventoryItemCount("mat_thi_thiet_mau") >= 1 &&
-                   GetInventoryItemCount("lo_xo_co_quan") >= 1;
-        }
-        else if (recipeIndex == 1) // Chư Cát Thần Nỗ
-        {
-            return GetInventoryItemCount("mat_thi_thiet_mau") >= 3 &&
-                   GetInventoryItemCount("lo_xo_co_quan") >= 5 &&
-                   GetInventoryItemCount("day_cung_kim_ti") >= 2;
-        }
-        return false;
+        if (recipeIndex < 0 || recipeIndex >= _recipes.Count) return false;
+        var recipe = _recipes[recipeIndex];
+
+        return (int)_player.Cultivation.CurrentRealm >= recipe.TierRequired &&
+               recipe.Ingredients.All(ing => _player.Inventory.GetItemCount(ing.ItemId) >= ing.Quantity);
     }
 
     private void CraftRecipe(int recipeIndex)
     {
         if (!CanCraftRecipe(recipeIndex))
         {
-            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), "Khong du nguyen lieu!", Color.Red));
+            _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 30), "Không đủ nguyên liệu hoặc cảnh giới!", Color.Red));
             return;
         }
 
-        // Khấu trừ nguyên liệu
-        if (recipeIndex == 0)
+        var recipe = _recipes[recipeIndex];
+        foreach (var ingredient in recipe.Ingredients)
         {
-            _player.Inventory.RemoveItem("mat_thi_thiet_mau", 1);
-            _player.Inventory.RemoveItem("lo_xo_co_quan", 1);
-
-            var weaponData = _hiddenWeapons.FirstOrDefault(w => w.ItemId == "am_khi_tu_tien_01");
-            if (weaponData != null)
-            {
-                _player.Inventory.AddHiddenWeapon(weaponData, 1);
-                _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 35), "Che tao thanh cong: Vo Thanh Tu Tien!", Color.Lime, 2.0f, 1.1f));
-                Console.WriteLine("[Lò Rèn] Đã chế tạo thành công: Vô Thanh Tụ Tiễn!");
-            }
-        }
-        else if (recipeIndex == 1)
-        {
-            _player.Inventory.RemoveItem("mat_thi_thiet_mau", 3);
-            _player.Inventory.RemoveItem("lo_xo_co_quan", 5);
-            _player.Inventory.RemoveItem("day_cung_kim_ti", 2);
-
-            var weaponData = _hiddenWeapons.FirstOrDefault(w => w.ItemId == "am_khi_chu_cat_02");
-            if (weaponData != null)
-            {
-                _player.Inventory.AddHiddenWeapon(weaponData, 1);
-                _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 35), "Che tao thanh cong: Chu Cat Than No!", Color.Lime, 2.0f, 1.1f));
-                Console.WriteLine("[Lò Rèn] Đã chế tạo thành công: Chư Cát Thần Nỗ!");
-            }
+            _player.Inventory.RemoveItem(ingredient.ItemId, ingredient.Quantity);
         }
 
-        // Hiệu ứng lò rèn giật rung và xẹt tia lửa
+        AddItemById(recipe.OutputId, 1);
+        _floatingTexts.Add(new FloatingText(_player.Position - new Vector2(0, 35), $"Luyện thành: {recipe.OutputName}!", Color.Lime, 2.0f, 1.1f));
+        Console.WriteLine($"[Lò Luyện] Luyện thành công: {recipe.OutputName}!");
+
         TriggerShake(0.2f, 4f);
         for (int i = 0; i < 15; i++)
         {
             Vector2 sparkVel = new Vector2((float)(_random.NextDouble() * 100 - 50), (float)(_random.NextDouble() * -80 - 20));
-            _particles.Add(new Particle(_anvilSpawner.Position, sparkVel, Color.OrangeRed, 3f, 0.8f, ParticleType.Spark));
+            _particles.Add(new Particle(ForgePosition, sparkVel, Color.OrangeRed, 3f, 0.8f, ParticleType.Spark));
+        }
+    }
+
+    private void HandleCraftingClick(int mouseX, int mouseY)
+    {
+        int slotLeft = CRAFT_PANEL_X + 15;
+        int slotRight = CRAFT_PANEL_X + CRAFT_PANEL_W - 15;
+        if (mouseX < slotLeft || mouseX > slotRight) return;
+
+        for (int i = 0; i < Math.Min(MAX_RECIPES_SHOWN, _recipes.Count); i++)
+        {
+            int slotY = CRAFT_SLOT_START_Y + i * (CRAFT_SLOT_H + CRAFT_SLOT_GAP);
+            if (mouseY >= slotY && mouseY <= slotY + CRAFT_SLOT_H)
+            {
+                _selectedRecipeIndex = i;
+                return;
+            }
+        }
+
+        if (mouseY >= CRAFT_BTN_Y && mouseY <= CRAFT_BTN_Y + CRAFT_BTN_H)
+        {
+            CraftRecipe(_selectedRecipeIndex);
         }
     }
 
     private void DrawCraftingUI()
     {
-        int startX = 20;
-        int startY = 15;
-        int width = 300;
-        int height = 505;
+        int startX = CRAFT_PANEL_X;
+        int startY = CRAFT_PANEL_Y;
+        int width = CRAFT_PANEL_W;
 
-        // Vẽ Nền
-        DrawRect(startX, startY, width, height, new Color(24, 20, 38, 235));
-        DrawRect(startX, startY, width, height, new Color(110, 85, 140), true);
-        DrawRect(startX + 1, startY + 1, width - 2, 1, new Color(160, 120, 190, 150)); // top inner highlight
+        DrawRect(startX, startY, width, CRAFT_PANEL_H, new Color(24, 20, 38, 235));
+        DrawRect(startX, startY, width, CRAFT_PANEL_H, new Color(110, 85, 140), true);
+        DrawRect(startX + 1, startY + 1, width - 2, 1, new Color(160, 120, 190, 150));
 
-        // Vẽ Tiêu đề
-        _spriteBatch.DrawString(_font, "LO REN DUONG MON (FORGE)", new Vector2(startX + 18, startY + 15), Color.Gold, 0f, Vector2.Zero, 0.88f, SpriteEffects.None, 0f);
-        DrawRect(startX + 15, startY + 40, width - 30, 2, new Color(110, 85, 140));
+        _spriteBatch.DrawString(_font, "LÒ LUYỆN (ĐAN / KHÍ)", new Vector2(startX + 18, startY + 10), Color.Gold, 0f, Vector2.Zero, 0.88f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, "[F1-F4] Chọn | [Click] Luyện", new Vector2(startX + 18, startY + 29), Color.Gray, 0f, Vector2.Zero, 0.65f, SpriteEffects.None, 0f);
+        DrawRect(startX + 15, startY + 46, width - 30, 2, new Color(110, 85, 140));
 
-        // Hai công thức chế tạo
-        int slotStartX = startX + 15;
-        int slotStartY = startY + 55;
-        int slotHeight = 160;
+        int slotX = startX + 15;
+        int slotW = width - 30;
 
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < Math.Min(MAX_RECIPES_SHOWN, _recipes.Count); i++)
         {
-            int sY = slotStartY + i * (slotHeight + 15);
+            var recipe = _recipes[i];
+            int sY = CRAFT_SLOT_START_Y + i * (CRAFT_SLOT_H + CRAFT_SLOT_GAP);
             bool isSelected = _selectedRecipeIndex == i;
 
             if (isSelected)
             {
-                DrawRect(slotStartX, sY, width - 30, slotHeight, Color.Purple * 0.2f);
-                DrawRect(slotStartX, sY, width - 30, slotHeight, Color.Gold, true);
+                DrawRect(slotX, sY, slotW, CRAFT_SLOT_H, Color.Purple * 0.2f);
+                DrawRect(slotX, sY, slotW, CRAFT_SLOT_H, Color.Gold, true);
             }
             else
             {
-                DrawRect(slotStartX, sY, width - 30, slotHeight, new Color(20, 16, 28));
-                DrawRect(slotStartX, sY, width - 30, slotHeight, new Color(80, 65, 100), true);
+                DrawRect(slotX, sY, slotW, CRAFT_SLOT_H, new Color(20, 16, 28));
+                DrawRect(slotX, sY, slotW, CRAFT_SLOT_H, new Color(80, 65, 100), true);
             }
 
-            // Vẽ tiêu đề của Recipe
-            string recipeName = i == 0 ? "1. Vo Thanh Tu Tien" : "2. Chu Cat Than No";
-            string reqRealm = i == 0 ? "(Yeu cau: Hon Si - Cap 10)" : "(Yeu cau: Hon Su - Cap 20+)";
-            _spriteBatch.DrawString(_font, recipeName, new Vector2(slotStartX + 10, sY + 8), isSelected ? Color.Gold : Color.White, 0f, Vector2.Zero, 0.85f, SpriteEffects.None, 0f);
-            _spriteBatch.DrawString(_font, reqRealm, new Vector2(slotStartX + 10, sY + 26), Color.DarkGray, 0f, Vector2.Zero, 0.72f, SpriteEffects.None, 0f);
+            bool realmOk = (int)_player.Cultivation.CurrentRealm >= recipe.TierRequired;
+            string realmReq = $"(Yêu cầu: {CultivationComponent.GetRealmDisplayName((CultivationRealm)recipe.TierRequired)})";
 
-            // Liệt kê nguyên liệu
-            _spriteBatch.DrawString(_font, "Nguyen lieu can:", new Vector2(slotStartX + 10, sY + 45), Color.LightGray, 0f, Vector2.Zero, 0.78f, SpriteEffects.None, 0f);
+            _spriteBatch.DrawString(_font, $"{i + 1}. {recipe.OutputName}", new Vector2(slotX + 10, sY + 6), isSelected ? Color.Gold : Color.White, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 0f);
+            _spriteBatch.DrawString(_font, realmReq, new Vector2(slotX + 10, sY + 22), realmOk ? Color.DarkGray : Color.Tomato, 0f, Vector2.Zero, 0.68f, SpriteEffects.None, 0f);
 
-            if (i == 0)
+            for (int k = 0; k < recipe.Ingredients.Count && k < 3; k++)
             {
-                // Vô Thanh Tụ Tiễn: 1 Thiết Mẫu, 1 Lò Xo
-                DrawIngredientStatus("mat_thi_thiet_mau", 1, slotStartX + 15, sY + 65);
-                DrawIngredientStatus("lo_xo_co_quan", 1, slotStartX + 15, sY + 88);
-            }
-            else
-            {
-                // Chư Cát Thần Nỗ: 3 Thiết Mẫu, 5 Lò Xo, 2 Dây Cung
-                DrawIngredientStatus("mat_thi_thiet_mau", 3, slotStartX + 15, sY + 65);
-                DrawIngredientStatus("lo_xo_co_quan", 5, slotStartX + 15, sY + 88);
-                DrawIngredientStatus("day_cung_kim_ti", 2, slotStartX + 15, sY + 111);
+                DrawIngredientStatus(recipe.Ingredients[k].ItemId, recipe.Ingredients[k].Quantity, slotX + 15, sY + 40 + k * 15);
             }
         }
-
-        // Vẽ nút CHẾ TẠO ở dưới
-        int btnX = startX + 15;
-        int btnY = startY + 420;
-        int btnW = width - 30;
-        int btnH = 60;
 
         bool canCraftSelected = CanCraftRecipe(_selectedRecipeIndex);
         Color btnColor = canCraftSelected ? new Color(50, 160, 50) : new Color(80, 80, 80);
         Color borderBtnColor = canCraftSelected ? Color.Lime : Color.DarkGray;
 
-        DrawRect(btnX, btnY, btnW, btnH, btnColor);
-        DrawRect(btnX, btnY, btnW, btnH, borderBtnColor, true);
+        DrawRect(slotX, CRAFT_BTN_Y, slotW, CRAFT_BTN_H, btnColor);
+        DrawRect(slotX, CRAFT_BTN_Y, slotW, CRAFT_BTN_H, borderBtnColor, true);
 
         if (canCraftSelected)
         {
-            DrawRect(btnX, btnY, btnW, Math.Max(1, btnH / 3), Color.White * 0.15f);
+            DrawRect(slotX, CRAFT_BTN_Y, slotW, Math.Max(1, CRAFT_BTN_H / 3), Color.White * 0.15f);
         }
 
-        string btnText = "BAT DAU CHE TAO";
+        string btnText = "BẮT ĐẦU LUYỆN";
         Vector2 textSize = _font.MeasureString(btnText) * 0.9f;
-        _spriteBatch.DrawString(_font, btnText, new Vector2(btnX + btnW / 2f - textSize.X / 2f, btnY + btnH / 2f - textSize.Y / 2f), 
+        _spriteBatch.DrawString(_font, btnText, new Vector2(slotX + slotW / 2f - textSize.X / 2f, CRAFT_BTN_Y + CRAFT_BTN_H / 2f - textSize.Y / 2f),
                                canCraftSelected ? Color.White : Color.LightGray, 0f, Vector2.Zero, 0.9f, SpriteEffects.None, 0f);
-        
-        _spriteBatch.DrawString(_font, "[F1-F2] Chon | [C/Click] Ren", new Vector2(startX + 30, btnY - 22), Color.Gray, 0f, Vector2.Zero, 0.72f, SpriteEffects.None, 0f);
     }
 
     private void DrawIngredientStatus(string itemId, int required, int x, int y)
     {
-        int owned = GetInventoryItemCount(itemId);
-        string itemName = GetHUDItemName(itemId);
-        string statusText = $"- {itemName}: {owned}/{required}";
+        int owned = _player.Inventory.GetItemCount(itemId);
         Color textColor = owned >= required ? Color.LimeGreen : Color.Tomato;
-        _spriteBatch.DrawString(_font, statusText, new Vector2(x, y), textColor, 0f, Vector2.Zero, 0.75f, SpriteEffects.None, 0f);
+        _spriteBatch.DrawString(_font, $"- {GetItemName(itemId)}: {owned}/{required}", new Vector2(x, y), textColor, 0f, Vector2.Zero, 0.7f, SpriteEffects.None, 0f);
     }
+
+    /// <summary>Một công thức Lò Luyện (gom từ crafting_recipe của Pháp Khí và Đan Dược).</summary>
+    private sealed record CraftingRecipe(string OutputId, string OutputName, int TierRequired, List<CraftingIngredient> Ingredients);
 
     private struct SavedMonsterData
     {
@@ -2326,19 +2208,11 @@ public class Game1 : Game
         public float y { get; set; }
     }
 
-    private struct SavedLauncherData
+    private struct SavedFormationData
     {
         public int type { get; set; }
         public int ammo { get; set; }
         public int maxAmmo { get; set; }
-        public float x { get; set; }
-        public float y { get; set; }
-    }
-
-    private struct SavedSoulRingData
-    {
-        public int age { get; set; }
-        public string element { get; set; }
         public float x { get; set; }
         public float y { get; set; }
     }
